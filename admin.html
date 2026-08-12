@@ -807,7 +807,11 @@ async function enterApp() {
     $('nav-audit').classList.add('hidden');
   }
 
-  venues = await api('listVenues');
+  // 一次拿齊基礎資料，避免開啟後台就發三次請求各等一到三秒
+  const boot = await api('getAdminBootstrap');
+  venues = boot.venues;
+  shiftTypes = boot.shiftTypes;
+  employees = boot.employees;
   fillStoreSelects();
 
   $('daily-date').value = todayStr();
