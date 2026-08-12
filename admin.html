@@ -1406,10 +1406,19 @@ $('imp-file').addEventListener('change', async function (e) {
       return '<option value="' + esc(n) + '">' + esc(n) + '</option>';
     }).join('');
 
-    // 猜一下目前月份對應的工作表，例如「20268月」
+    // 猜目前月份的工作表。各店命名不同：南華「20268月」、安康與頂溪「2026.8」
     const now = new Date();
-    const guess = now.getFullYear() + '' + (now.getMonth() + 1) + '月';
-    if (workbook.SheetNames.indexOf(guess) >= 0) $('imp-sheet').value = guess;
+    const y = now.getFullYear();
+    const m = now.getMonth() + 1;
+    const guesses = [y + '' + m + '月', y + '.' + m, y + '-' + m, y + '/' + m,
+                     y + '.' + ('0' + m).slice(-2), y + '年' + m + '月'];
+
+    for (let i = 0; i < guesses.length; i++) {
+      if (workbook.SheetNames.indexOf(guesses[i]) >= 0) {
+        $('imp-sheet').value = guesses[i];
+        break;
+      }
+    }
 
     $('imp-sheet-field').classList.remove('hidden');
     $('imp-store-field').classList.remove('hidden');
@@ -1468,6 +1477,57 @@ function parseShiftText(text) {
   };
 }
 
+/**
+ * 把班表上的名字對到系統裡的員工。
+ *
+ * 各店寫法不一致：南華純英文名（Chris）、安康中英相連（賴佳屏Alai）、
+ * 頂溪中英之間有空格（劉光禹 Gary）。依序用四種方式比對，
+ * 都是精確相符而非模糊比對，避免 Alan／Alai 這種相近的名字互相誤認。
+ */
+function matchEmployee(cellText, list) {
+  const text = String(cellText || '').trim();
+  if (!text) return null;
+
+  const active = list.filter(function (e) { return e.狀態 !== '停用'; });
+  const lower = text.toLowerCase();
+
+  // 1) 整格就是英文名或中文名
+  let hit = active.filter(function (e) {
+    return String(e.姓名).toLowerCase() === lower ||
+           String(e.中文姓名 || '') === text;
+  })[0];
+  if (hit) return hit;
+
+  // 2) 去掉中文與空白後比英文名（賴佳屏Alai → Alai）
+  const enOnly = text.replace(/[一-鿿\s]/g, '').toLowerCase();
+  if (enOnly) {
+    hit = active.filter(function (e) {
+      return String(e.姓名).toLowerCase() === enOnly;
+    })[0];
+    if (hit) return hit;
+  }
+
+  // 3) 只取中文部分比中文姓名
+  const zhOnly = text.replace(/[^一-鿿]/g, '');
+  if (zhOnly) {
+    hit = active.filter(function (e) {
+      return String(e.中文姓名 || '') === zhOnly;
+    })[0];
+    if (hit) return hit;
+  }
+
+  // 4) 名字被截斷的情況（例如欄寬不夠存成「黃威廉 Willia」）
+  if (enOnly.length >= 4) {
+    const partial = active.filter(function (e) {
+      const n = String(e.姓名).toLowerCase();
+      return n.indexOf(enOnly) === 0 || enOnly.indexOf(n) === 0;
+    });
+    if (partial.length === 1) return partial[0];
+  }
+
+  return null;
+}
+
 async function parseSelectedSheet() {
   if (!workbook) return;
 
@@ -1493,13 +1553,15 @@ async function parseSelectedSheet() {
     rows.forEach(function (row) {
       const first = String(row[0] || '').trim();
 
-      // 日期標題列：第一格寫「日期」，右邊是一連串日期
-      if (first === '日期') {
-        dateColumns = {};
-        for (let c = 1; c < row.length; c++) {
-          const d = cellDate(row[c]);
-          if (d) dateColumns[c] = d;
-        }
+      // 日期標題列的判斷不能依賴第一格寫什麼——南華寫「日期」，
+      // 安康和頂溪是空白。改成「這列有三個以上的日期值」就當標題列。
+      const dates = {};
+      for (let c = 1; c < row.length; c++) {
+        const d = cellDate(row[c]);
+        if (d) dates[c] = d;
+      }
+      if (Object.keys(dates).length >= 3) {
+        dateColumns = dates;
         return;
       }
 
@@ -1518,9 +1580,7 @@ async function parseSelectedSheet() {
       if (row[0] instanceof Date) { dateColumns = null; return; }
 
       // 這列是某個人的班
-      const employee = employees.filter(function (e) {
-        return e.姓名.toLowerCase() === first.toLowerCase() && e.狀態 !== '停用';
-      })[0];
+      const employee = matchEmployee(first, employees);
 
       if (!employee) { unknownNames[first] = (unknownNames[first] || 0) + 1; return; }
       matchedNames[first] = employee.員工編號;
