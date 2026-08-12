@@ -1257,7 +1257,10 @@ const OFF_TEXT_MAP = {
   '例假': 'OFF_HOLIDAY',
   '例假日': 'OFF_HOLIDAY',
   '指定休': 'OFF_DESIGNATED',
+  '調整休': 'OFF_ADJUST',
   '請假': 'OFF_LEAVE',
+  '教召': 'OFF_OFFICIAL',
+  '公假': 'OFF_OFFICIAL',
 };
 
 let workbook = null;
@@ -1390,8 +1393,15 @@ async function parseSelectedSheet() {
         return;
       }
 
-      if (!dateColumns || !first) return;
+      // 空白列代表這個班表區塊結束。
+      // 不重置的話，Excel 下方的統計區與圖例說明會被當成班表繼續讀進來。
+      if (!first) { dateColumns = null; return; }
+
+      if (!dateColumns) return;
       if (first.indexOf('星期') === 0) return;
+
+      // 第一格是日期值（例如統計區的 07/01）不是人名，跳過
+      if (row[0] instanceof Date) { dateColumns = null; return; }
 
       // 這列是某個人的班
       const employee = employees.filter(function (e) {
@@ -1476,12 +1486,15 @@ function renderImportPreview(entries, matched, unknownNames, unknownShifts) {
 
       const list = missShifts.map(function (s) {
         const p = parseShiftText(s);
+        // 休息預設 0：南華現行班表的月時數是用「在店時間」直接累加的
+        //（189 小時 = 21 天 × 9 小時），沒有扣休息。設 1 會讓系統算出來
+        // 比他們慣用的數字少一截。要改的話在「班別」分頁改。
         return p && p.名稱 ? {
           名稱: p.名稱,
           適用店: $('imp-store').value,
           上班時間: p.上班時間,
           下班時間: p.下班時間,
-          休息時數: 1,
+          休息時數: 0,
           遲到寬限: 5,
         } : null;
       }).filter(Boolean);
