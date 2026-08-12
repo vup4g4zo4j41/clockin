@@ -341,6 +341,7 @@
         <input type="month" id="sched-month">
         <button class="btn" id="sched-reload">查詢</button>
         <span class="spacer"></span>
+        <button class="btn" id="btn-import">匯入 Excel</button>
         <button class="btn primary" id="btn-generate">依常態班生成</button>
       </div>
 
@@ -560,6 +561,48 @@
   </div>
 </div>
 
+<!-- 匯入 Excel 班表 -->
+<div class="overlay" id="modal-import">
+  <div class="modal" style="max-width:640px">
+    <h2>匯入 Excel 班表</h2>
+    <p style="font-size:0.88rem;color:var(--ink-2)">
+      直接讀你們現有的排班 Excel，不用改格式。檔案不會上傳到任何地方，
+      解析在你的瀏覽器裡完成，只有解析結果會寫進系統。
+    </p>
+
+    <div class="field">
+      <label for="imp-file">選擇檔案</label>
+      <input type="file" id="imp-file" accept=".xlsx,.xls" style="font-size:0.9rem">
+    </div>
+
+    <div class="field hidden" id="imp-sheet-field">
+      <label for="imp-sheet">工作表（月份）</label>
+      <select id="imp-sheet"></select>
+    </div>
+
+    <div class="field hidden" id="imp-store-field">
+      <label for="imp-store">匯入到哪間店</label>
+      <select id="imp-store"></select>
+    </div>
+
+    <div id="imp-preview"></div>
+
+    <div class="field hidden" id="imp-overwrite-field">
+      <label style="display:flex;align-items:center;gap:0.5rem;font-weight:500">
+        <input type="checkbox" id="imp-overwrite" style="width:auto" checked>
+        覆蓋已存在的排班
+      </label>
+      <span class="hint">不勾的話，系統裡已經有班的日子會保留原本的</span>
+    </div>
+
+    <div id="imp-msg"></div>
+    <div class="modal-actions">
+      <button class="btn" data-close>取消</button>
+      <button class="btn primary hidden" id="imp-submit">匯入</button>
+    </div>
+  </div>
+</div>
+
 <!-- 班別選擇浮動選單 -->
 <div id="shift-picker"></div>
 
@@ -682,7 +725,13 @@ function esc(s) {
 
 function verdictTag(v) {
   if (!v) return '';
-  const map = { '準時': 'ok', '遲到': 'warn', '早退': 'warn', '未排班出勤': 'info', '請假': 'info' };
+  const map = {
+    '準時': 'ok', '遲到': 'warn', '早退': 'warn',
+    '未排班出勤': 'info', '請假': 'info',
+    // 排休卻來上班：例假出勤法規上最需要注意，標紅
+    '例假出勤': 'crit', '休息日出勤': 'warn',
+    '指定休出勤': 'warn', '請假出勤': 'warn',
+  };
   return v.split('、').map(function (x) {
     return '<span class="tag ' + (map[x] || 'mute') + '">' + esc(x) + '</span>';
   }).join(' ');
@@ -1092,11 +1141,15 @@ $('sched-table').addEventListener('click', function (e) {
 
   picker.innerHTML =
     '<div class="pick-head">' + esc(cell.dataset.name) + ' · ' + cell.dataset.date + '</div>' +
-    '<button data-code="">休假</button>' +
     scheduleData.班別.map(function (s) {
       return '<button data-code="' + esc(s.班別代碼) + '">' + esc(s.名稱) +
              '<span class="t">' + s.上班時間 + '–' + s.下班時間 + '</span></button>';
-    }).join('');
+    }).join('') +
+    '<div class="pick-head" style="margin-top:0.3rem">休假</div>' +
+    (scheduleData.休假類型 || []).map(function (o) {
+      return '<button data-code="' + esc(o.代碼) + '">' + esc(o.名稱) + '</button>';
+    }).join('') +
+    '<button data-code="" style="color:var(--muted)">清空這格</button>';
 
   picker.dataset.emp = cell.dataset.emp;
   picker.dataset.date = cell.dataset.date;
@@ -1162,6 +1215,298 @@ $('gen-submit').addEventListener('click', async function () {
     showMsg('gen-msg', esc(err.message));
   } finally {
     btn.disabled = false; btn.textContent = '生成';
+  }
+});
+
+// ── 匯入 Excel 班表 ───────────────────────────────────
+//
+// Excel 格式（依南華店現行班表）：
+//   第 N 列   ：日期 | 2026-08-01 | 2026-08-02 | …
+//   第 N+1 列 ：（空） | 星期六 | 星期日 | …
+//   第 N+2 列起：姓名 | 早07-16 | 例假 | …
+// 一個月拆成上下半月兩個區塊，所以要掃描整張表找出所有「日期」列。
+
+const OFF_TEXT_MAP = {
+  '休息日': 'OFF_REST',
+  '例假': 'OFF_HOLIDAY',
+  '例假日': 'OFF_HOLIDAY',
+  '指定休': 'OFF_DESIGNATED',
+  '請假': 'OFF_LEAVE',
+};
+
+let workbook = null;
+let parsedImport = null;
+
+$('btn-import').addEventListener('click', function () {
+  $('imp-file').value = '';
+  $('imp-preview').innerHTML = '';
+  showMsg('imp-msg', '');
+  ['imp-sheet-field', 'imp-store-field', 'imp-overwrite-field'].forEach(function (id) {
+    $(id).classList.add('hidden');
+  });
+  $('imp-submit').classList.add('hidden');
+
+  $('imp-store').innerHTML = $('sched-store').innerHTML;
+  $('imp-store').value = $('sched-store').value;
+
+  openModal('modal-import');
+});
+
+$('imp-file').addEventListener('change', async function (e) {
+  const file = e.target.files[0];
+  if (!file) return;
+
+  showMsg('imp-msg', '讀取中…', 'ok');
+
+  try {
+    await ensureSheetJS();
+    const buffer = await file.arrayBuffer();
+    workbook = XLSX.read(buffer, { type: 'array', cellDates: true });
+
+    $('imp-sheet').innerHTML = workbook.SheetNames.map(function (n) {
+      return '<option value="' + esc(n) + '">' + esc(n) + '</option>';
+    }).join('');
+
+    // 猜一下目前月份對應的工作表，例如「20268月」
+    const now = new Date();
+    const guess = now.getFullYear() + '' + (now.getMonth() + 1) + '月';
+    if (workbook.SheetNames.indexOf(guess) >= 0) $('imp-sheet').value = guess;
+
+    $('imp-sheet-field').classList.remove('hidden');
+    $('imp-store-field').classList.remove('hidden');
+    showMsg('imp-msg', '');
+    parseSelectedSheet();
+
+  } catch (err) {
+    showMsg('imp-msg', '讀取失敗：' + esc(err.message));
+  }
+});
+
+$('imp-sheet').addEventListener('change', parseSelectedSheet);
+$('imp-store').addEventListener('change', parseSelectedSheet);
+
+/** SheetJS 只在需要時才載入，平常不拖慢後台開啟速度。 */
+function ensureSheetJS() {
+  if (window.XLSX) return Promise.resolve();
+  return new Promise(function (resolve, reject) {
+    const s = document.createElement('script');
+    s.src = 'https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js';
+    s.onload = resolve;
+    s.onerror = function () { reject(new Error('無法載入 Excel 解析元件，請檢查網路')); };
+    document.head.appendChild(s);
+  });
+}
+
+function cellDate(v) {
+  if (v instanceof Date) {
+    return v.getFullYear() + '-' + ('0' + (v.getMonth() + 1)).slice(-2) + '-' + ('0' + v.getDate()).slice(-2);
+  }
+  const s = String(v || '').trim();
+  return /^\d{4}-\d{1,2}-\d{1,2}$/.test(s)
+    ? s.replace(/-(\d)(?=-|$)/g, '-0$1')
+    : null;
+}
+
+/**
+ * 把「早07-16」這種文字拆成班別定義。
+ * 回傳 null 代表不是班別（可能是休假或空白）。
+ */
+function parseShiftText(text) {
+  const t = String(text || '').trim();
+  if (!t) return null;
+  if (OFF_TEXT_MAP[t]) return { off: OFF_TEXT_MAP[t], label: t };
+
+  const m = t.match(/^(.*?)(\d{1,2})\s*[-–~]\s*(\d{1,2})$/);
+  if (!m) return { unknown: t };
+
+  const start = Number(m[2]), end = Number(m[3]);
+  if (isNaN(start) || isNaN(end) || end <= start || end > 24) return { unknown: t };
+
+  return {
+    名稱: t,
+    上班時間: ('0' + start).slice(-2) + ':00',
+    下班時間: ('0' + end).slice(-2) + ':00',
+  };
+}
+
+async function parseSelectedSheet() {
+  if (!workbook) return;
+
+  const sheetName = $('imp-sheet').value;
+  const store = $('imp-store').value;
+  const preview = $('imp-preview');
+
+  preview.innerHTML = '<div class="msg" style="background:var(--surface-2)">解析中…</div>';
+  $('imp-submit').classList.add('hidden');
+
+  try {
+    if (!employees.length) employees = await api('listEmployees', {});
+    if (!shiftTypes.length) shiftTypes = await api('listShiftTypes', {});
+
+    const rows = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { header: 1, defval: '' });
+
+    const entries = [];
+    const unknownNames = {};
+    const unknownShifts = {};
+    const matchedNames = {};
+    let dateColumns = null;
+
+    rows.forEach(function (row) {
+      const first = String(row[0] || '').trim();
+
+      // 日期標題列：第一格寫「日期」，右邊是一連串日期
+      if (first === '日期') {
+        dateColumns = {};
+        for (let c = 1; c < row.length; c++) {
+          const d = cellDate(row[c]);
+          if (d) dateColumns[c] = d;
+        }
+        return;
+      }
+
+      if (!dateColumns || !first) return;
+      if (first.indexOf('星期') === 0) return;
+
+      // 這列是某個人的班
+      const employee = employees.filter(function (e) {
+        return e.姓名.toLowerCase() === first.toLowerCase() && e.狀態 !== '停用';
+      })[0];
+
+      if (!employee) { unknownNames[first] = (unknownNames[first] || 0) + 1; return; }
+      matchedNames[first] = employee.員工編號;
+
+      Object.keys(dateColumns).forEach(function (c) {
+        const parsed = parseShiftText(row[c]);
+        if (!parsed) return;
+
+        if (parsed.unknown) {
+          unknownShifts[parsed.unknown] = (unknownShifts[parsed.unknown] || 0) + 1;
+          return;
+        }
+
+        let code;
+        if (parsed.off) {
+          code = parsed.off;
+        } else {
+          const match = shiftTypes.filter(function (s) { return s.名稱 === parsed.名稱; })[0];
+          if (!match) {
+            unknownShifts[parsed.名稱] = (unknownShifts[parsed.名稱] || 0) + 1;
+            return;
+          }
+          code = match.班別代碼;
+        }
+
+        entries.push({ employeeId: employee.員工編號, date: dateColumns[c], shiftCode: code });
+      });
+    });
+
+    parsedImport = { entries: entries, store: store, sheetName: sheetName };
+    renderImportPreview(entries, matchedNames, unknownNames, unknownShifts);
+
+  } catch (err) {
+    preview.innerHTML = '<div class="msg err">解析失敗：' + esc(err.message) + '</div>';
+  }
+}
+
+function renderImportPreview(entries, matched, unknownNames, unknownShifts) {
+  const preview = $('imp-preview');
+  const missNames = Object.keys(unknownNames);
+  const missShifts = Object.keys(unknownShifts);
+
+  let html = '';
+
+  if (entries.length) {
+    const dates = entries.map(function (e) { return e.date; }).sort();
+    html += '<div class="msg ok">可匯入 <strong>' + entries.length + '</strong> 筆　·　' +
+            Object.keys(matched).length + ' 人　·　' +
+            dates[0] + ' ～ ' + dates[dates.length - 1] + '</div>';
+  } else {
+    html += '<div class="msg err">沒有解析出任何可匯入的資料</div>';
+  }
+
+  if (missShifts.length) {
+    html += '<div class="msg" style="background:var(--warn-soft);color:var(--warn);margin-top:0.6rem">' +
+      '<strong>系統裡還沒有這些班別：</strong><br>' +
+      missShifts.map(function (s) {
+        return esc(s) + '（' + unknownShifts[s] + ' 格）';
+      }).join('、') +
+      '<br><button class="btn sm" id="btn-create-shifts" style="margin-top:0.5rem">一鍵建立這些班別</button>' +
+      '</div>';
+  }
+
+  if (missNames.length) {
+    html += '<div class="msg" style="background:var(--crit-soft);color:var(--crit);margin-top:0.6rem">' +
+      '<strong>這些名字在系統裡找不到，會被略過：</strong><br>' +
+      missNames.map(function (n) { return esc(n); }).join('、') +
+      '<br><span style="font-size:0.82rem">請先到「員工」分頁把這些人加進系統，' +
+      '姓名要跟班表上完全一致。</span></div>';
+  }
+
+  preview.innerHTML = html;
+
+  if (missShifts.length) {
+    $('btn-create-shifts').addEventListener('click', async function () {
+      this.disabled = true; this.textContent = '建立中…';
+
+      const list = missShifts.map(function (s) {
+        const p = parseShiftText(s);
+        return p && p.名稱 ? {
+          名稱: p.名稱,
+          適用店: $('imp-store').value,
+          上班時間: p.上班時間,
+          下班時間: p.下班時間,
+          休息時數: 1,
+          遲到寬限: 5,
+        } : null;
+      }).filter(Boolean);
+
+      try {
+        const result = await api('createShiftTypesBatch', { list: list });
+        toast('已建立 ' + result.已建立.length + ' 種班別');
+        shiftTypes = await api('listShiftTypes', {});
+        parseSelectedSheet();
+      } catch (err) {
+        alert(err.message);
+        this.disabled = false; this.textContent = '一鍵建立這些班別';
+      }
+    });
+  }
+
+  if (entries.length && !missShifts.length) {
+    $('imp-overwrite-field').classList.remove('hidden');
+    $('imp-submit').classList.remove('hidden');
+  }
+}
+
+$('imp-submit').addEventListener('click', async function () {
+  if (!parsedImport || !parsedImport.entries.length) return;
+
+  const btn = this;
+  btn.disabled = true; btn.textContent = '匯入中…';
+  showMsg('imp-msg', '資料量大時可能需要一分鐘，請不要關閉視窗', 'ok');
+
+  try {
+    const result = await api('importSchedule', {
+      storeCode: $('imp-store').value,
+      entries: parsedImport.entries,
+      overwrite: $('imp-overwrite').checked,
+    });
+
+    closeModal('modal-import');
+    toast('匯入完成：新增 ' + result.新增 + '、更新 ' + result.更新 + ' 筆');
+
+    if (result.錯誤 && result.錯誤.length) {
+      alert('有幾筆沒有匯入：\n\n' + result.錯誤.join('\n'));
+    }
+
+    $('sched-store').value = $('imp-store').value;
+    $('sched-month').value = result.起日.slice(0, 7);
+    loadSchedule();
+
+  } catch (err) {
+    showMsg('imp-msg', esc(err.message));
+  } finally {
+    btn.disabled = false; btn.textContent = '匯入';
   }
 });
 
