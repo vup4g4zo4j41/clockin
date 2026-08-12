@@ -268,6 +268,59 @@
 
   /* ── 常態班表格 ── */
   #pattern-table select { font-size: 0.82rem; padding: 0.3rem 0.4rem; min-width: 5rem; }
+
+  /* ── 班表顏色 ──
+     班別由主管自選；休假類型固定，配色沿用你們 Excel 的慣例
+     （休息日綠、例假藍、請假橘、指定休黃）。 */
+  table.sched td.cell {
+    min-width: 4.7rem; font-size: 0.72rem; letter-spacing: -0.01em;
+    padding: 0.42rem 0.3rem;
+  }
+  table.sched th.day { min-width: 4.7rem; }
+
+  .sh          { display: block; border-radius: 4px; padding: 0.2rem 0.1rem; }
+  .sh-sky      { background: #DFF0F8; color: #17607F; }
+  .sh-amber    { background: #FBF0DB; color: #8A5A11; }
+  .sh-violet   { background: #ECE6F8; color: #5B3E9E; }
+  .sh-teal     { background: #DDEFEB; color: #17635A; }
+  .sh-rose     { background: #FAE3E7; color: #97354D; }
+  .sh-lime     { background: #E8F1D8; color: #4F6B18; }
+  .sh-indigo   { background: #E3E7F7; color: #3A458F; }
+  .sh-slate    { background: #E7EBEE; color: #4A5964; }
+
+  .sh-rest       { background: #E1EFE3; color: #2E6B3A; }
+  .sh-holiday    { background: #DCEAF6; color: #1F5686; }
+  .sh-leave      { background: #FBE7D7; color: #9A5518; }
+  .sh-designated { background: #F9EFCD; color: #7A6011; }
+  .sh-adjust     { background: #EFE5F4; color: #6A3D82; }
+  .sh-official   { background: #E5E9ED; color: #4A5A6B; }
+  .sh-none       { color: var(--muted); }
+
+  @media (prefers-color-scheme: dark) {
+    .sh-sky      { background: #103244; color: #8CCBE4; }
+    .sh-amber    { background: #3A2C10; color: #E0B66A; }
+    .sh-violet   { background: #2A2242; color: #B9A5E8; }
+    .sh-teal     { background: #103330; color: #77C7BC; }
+    .sh-rose     { background: #3B1F27; color: #E29CAC; }
+    .sh-lime     { background: #263312; color: #AFCB74; }
+    .sh-indigo   { background: #1F2542; color: #A0AAE6; }
+    .sh-slate    { background: #232C33; color: #A3B3BF; }
+
+    .sh-rest       { background: #16311C; color: #86C795; }
+    .sh-holiday    { background: #122C42; color: #85B9E0; }
+    .sh-leave      { background: #3A2413; color: #E0A46C; }
+    .sh-designated { background: #33290D; color: #DCC372; }
+    .sh-adjust     { background: #2C2035; color: #C3A0D4; }
+    .sh-official   { background: #242B31; color: #9BAAB6; }
+  }
+
+  /* 顏色選擇色塊 */
+  .swatch {
+    display: inline-block; width: 1.5rem; height: 1.5rem;
+    border-radius: 5px; border: 2px solid transparent; cursor: pointer;
+    vertical-align: middle; margin-right: 0.25rem;
+  }
+  .swatch.on { border-color: var(--ink); }
 </style>
 </head>
 <body>
@@ -1147,14 +1200,16 @@ function renderSchedule(range) {
       const wd = new Date(d + 'T12:00:00+08:00').getDay();
       const weekend = (wd === 0 || wd === 6) ? ' weekend' : '';
       const cell = row[d];
-      const label = cell && cell.班別名稱 ? cell.班別名稱.slice(0, 1) : '休';
-      const title = cell && cell.班別名稱
-        ? cell.班別名稱 + ' ' + cell.上班時間 + '–' + cell.下班時間
-        : '休假';
 
-      body += '<td class="cell' + weekend + (cell && cell.班別名稱 ? '' : ' off') +
+      const label = cell && cell.班別名稱 ? cell.班別名稱 : '—';
+      const title = cell && cell.班別名稱
+        ? (cell.上班時間 ? cell.班別名稱 + ' ' + cell.上班時間 + '–' + cell.下班時間 : cell.班別名稱)
+        : '未排班';
+
+      body += '<td class="cell' + weekend +
               '" data-emp="' + esc(empId) + '" data-name="' + esc(e.姓名) +
-              '" data-date="' + d + '" title="' + esc(title) + '">' + esc(label) + '</td>';
+              '" data-date="' + d + '" title="' + esc(title) + '">' +
+              '<span class="sh ' + shiftColorClass(cell) + '">' + esc(label) + '</span></td>';
     });
     body += '</tr>';
   });
@@ -1172,6 +1227,29 @@ function renderSchedule(range) {
 
   $('sched-table').innerHTML = head + body + foot;
   $('sched-count').textContent = scheduleData.員工.length + ' 人 · ' + range.days + ' 天';
+}
+
+/** 休假類型的顏色固定，沿用你們 Excel 的慣例；班別的顏色由設定決定。 */
+const OFF_COLOR_CLASS = {
+  'OFF_REST': 'sh-rest',
+  'OFF_HOLIDAY': 'sh-holiday',
+  'OFF_LEAVE': 'sh-leave',
+  'OFF_DESIGNATED': 'sh-designated',
+  'OFF_ADJUST': 'sh-adjust',
+  'OFF_OFFICIAL': 'sh-official',
+};
+
+function shiftColorClass(cell) {
+  if (!cell || !cell.班別代碼) return 'sh-none';
+
+  const code = cell.班別代碼;
+  if (OFF_COLOR_CLASS[code]) return OFF_COLOR_CLASS[code];
+
+  const shift = (scheduleData.班別 || []).filter(function (s) {
+    return s.班別代碼 === code;
+  })[0];
+
+  return shift && shift.顏色 ? 'sh-' + shift.顏色 : 'sh-slate';
 }
 
 function addDaysStr(dateStr, n) {
@@ -1195,12 +1273,15 @@ $('sched-table').addEventListener('click', function (e) {
   picker.innerHTML =
     '<div class="pick-head">' + esc(cell.dataset.name) + ' · ' + cell.dataset.date + '</div>' +
     scheduleData.班別.map(function (s) {
-      return '<button data-code="' + esc(s.班別代碼) + '">' + esc(s.名稱) +
-             '<span class="t">' + s.上班時間 + '–' + s.下班時間 + '</span></button>';
+      return '<button data-code="' + esc(s.班別代碼) + '">' +
+             '<span class="swatch sh-' + esc(s.顏色) + '" style="width:0.85rem;height:0.85rem"></span>' +
+             esc(s.名稱) + '<span class="t">' + s.上班時間 + '–' + s.下班時間 + '</span></button>';
     }).join('') +
     '<div class="pick-head" style="margin-top:0.3rem">休假</div>' +
     (scheduleData.休假類型 || []).map(function (o) {
-      return '<button data-code="' + esc(o.代碼) + '">' + esc(o.名稱) + '</button>';
+      return '<button data-code="' + esc(o.代碼) + '">' +
+             '<span class="swatch ' + (OFF_COLOR_CLASS[o.代碼] || '') +
+             '" style="width:0.85rem;height:0.85rem"></span>' + esc(o.名稱) + '</button>';
     }).join('') +
     '<button data-code="" style="color:var(--muted)">清空這格</button>';
 
@@ -1600,11 +1681,13 @@ async function loadShifts() {
     } else {
       table.innerHTML =
         '<thead><tr><th>代碼</th><th>名稱</th><th>適用</th><th>時間</th>' +
-        '<th class="num">休息</th><th class="num">應出勤</th><th class="num">寬限</th><th></th></tr></thead><tbody>' +
+        '<th class="num">休息</th><th class="num">應出勤</th><th class="num">寬限</th>' +
+        '<th>班表顏色</th><th></th></tr></thead><tbody>' +
         shiftTypes.map(function (s) {
           return '<tr>' +
             '<td class="mono">' + esc(s.班別代碼) + '</td>' +
-            '<td>' + esc(s.名稱) + '</td>' +
+            '<td><span class="sh sh-' + esc(s.顏色) + '" style="display:inline-block;padding:0.15rem 0.5rem">' +
+              esc(s.名稱) + '</span></td>' +
             '<td>' + (s.適用店 === '通用'
               ? '<span class="tag info">通用</span>'
               : '<span class="tag mute">' + esc(storeName(s.適用店)) + '</span>') + '</td>' +
@@ -1612,6 +1695,12 @@ async function loadShifts() {
             '<td class="num">' + s.休息時數 + ' 時</td>' +
             '<td class="num">' + s.應出勤時數 + ' 時</td>' +
             '<td class="num">' + s.遲到寬限 + ' 分</td>' +
+            '<td class="swatches" data-code="' + esc(s.班別代碼) + '">' +
+              SHIFT_COLORS.map(function (c) {
+                return '<span class="swatch sh-' + c + (c === s.顏色 ? ' on' : '') +
+                       '" data-color="' + c + '" title="' + c + '"></span>';
+              }).join('') +
+            '</td>' +
             '<td class="actions"><button class="btn sm danger" data-disable-shift="' +
               esc(s.班別代碼) + '" data-name="' + esc(s.名稱) + '">停用</button></td>' +
             '</tr>';
@@ -1625,7 +1714,30 @@ async function loadShifts() {
   }
 }
 
+const SHIFT_COLORS = ['sky', 'amber', 'violet', 'teal', 'rose', 'lime', 'indigo', 'slate'];
+
+// 點色塊改班別顏色
 $('shift-table').addEventListener('click', async function (e) {
+  const sw = e.target.closest('.swatch');
+  if (sw) {
+    const code = sw.closest('.swatches').dataset.code;
+    const cell = sw.parentNode;
+
+    cell.querySelectorAll('.swatch').forEach(function (s) { s.classList.remove('on'); });
+    sw.classList.add('on');
+
+    try {
+      await api('setShiftColor', { code: code, color: sw.dataset.color });
+      invalidateViews();
+      toast('顏色已更新');
+      loadShifts();
+    } catch (err) {
+      alert(err.message);
+      loadShifts();
+    }
+    return;
+  }
+
   const btn = e.target.closest('button[data-disable-shift]');
   if (!btn) return;
 
