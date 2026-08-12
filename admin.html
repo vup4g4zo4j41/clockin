@@ -1211,13 +1211,18 @@ function renderSchedule(range) {
   });
   body += '</tbody>';
 
-  let foot = '<tfoot><tr><td class="emp">當日人數</td>';
+  let foot = '<tfoot><tr><td class="emp">當日上班</td>';
   dates.forEach(function (d) {
     const counts = scheduleData.每日人數[d] || {};
-    const total = Object.keys(counts).reduce(function (s, k) { return s + counts[k]; }, 0);
+    const kinds = Object.keys(counts);
+    const total = kinds.reduce(function (s, k) { return s + counts[k]; }, 0);
+    const detail = kinds.map(function (k) { return k + ' ' + counts[k] + ' 人'; }).join('、');
+
     const wd = new Date(d + 'T12:00:00+08:00').getDay();
     const weekend = (wd === 0 || wd === 6) ? ' weekend' : '';
-    foot += '<td class="' + (total === 0 ? 'low' : '') + weekend + '">' + total + '</td>';
+
+    foot += '<td class="' + (total === 0 ? 'low' : '') + weekend +
+            '" title="' + esc(detail || '沒有人上班') + '">' + total + '</td>';
   });
   foot += '</tr></tfoot>';
 
