@@ -1,0 +1,929 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>打卡</title>
+<script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+<style>
+  :root {
+    --ground:   #F4F7F9;
+    --surface:  #FFFFFF;
+    --ink:      #16202A;
+    --ink-2:    #5A6B77;
+    --muted:    #8A9AA6;
+    --rule:     #DDE4E9;
+    --accent:   #1F5E6B;
+    --accent-d: #164851;
+    --ok:       #2E7D5B;
+    --ok-soft:  #E4F1EA;
+    --warn:     #B87A1E;
+    --warn-soft:#F8EFDE;
+    --crit:     #B3453A;
+    --crit-soft:#F8E6E4;
+    --sans: system-ui, -apple-system, "PingFang TC", "Microsoft JhengHei", sans-serif;
+    --mono: ui-monospace, "SF Mono", Menlo, monospace;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--sans);
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom);
+  }
+
+  .app { max-width: 480px; margin: 0 auto; min-height: 100vh; display: flex; flex-direction: column; }
+
+  /* ── 畫面切換 ── */
+  .screen { display: none; flex: 1; flex-direction: column; padding: 1.25rem 1.25rem 1.5rem; gap: 1rem; }
+  .screen.active { display: flex; }
+
+  /* ── 載入中 ── */
+  #screen-loading { align-items: center; justify-content: center; gap: 1rem; }
+
+  .spinner {
+    width: 32px; height: 32px;
+    border: 3px solid var(--rule);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 2s; } }
+
+  .loading-text { color: var(--ink-2); font-size: 0.95rem; }
+
+  /* ── 頁首 ── */
+  .header { display: flex; flex-direction: column; gap: 0.15rem; padding-top: 0.5rem; }
+  .header .name { font-size: 1.5rem; font-weight: 700; letter-spacing: -0.01em; }
+  .header .sub { font-size: 0.9rem; color: var(--ink-2); }
+
+  /* ── 卡片 ── */
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-radius: 12px;
+    padding: 1rem 1.15rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .card-label {
+    font-size: 0.72rem;
+    letter-spacing: 0.1em;
+    color: var(--muted);
+    font-family: var(--mono);
+  }
+
+  .shift-time { font-size: 1.15rem; font-weight: 650; font-variant-numeric: tabular-nums; }
+  .shift-name { font-size: 0.88rem; color: var(--ink-2); }
+
+  /* ── 定位狀態 ── */
+  .locate {
+    display: flex; align-items: center; gap: 0.6rem;
+    padding: 0.85rem 1rem;
+    border-radius: 10px;
+    font-size: 0.92rem;
+    background: var(--surface);
+    border: 1px solid var(--rule);
+  }
+  .locate.ok   { background: var(--ok-soft);   border-color: transparent; color: var(--ok); }
+  .locate.far  { background: var(--warn-soft); border-color: transparent; color: var(--warn); }
+  .locate.fail { background: var(--crit-soft); border-color: transparent; color: var(--crit); }
+  .locate .dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
+  .locate .txt { flex: 1; }
+  .locate .m { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+
+  /* ── 主按鈕 ── */
+  .punch-btn {
+    margin-top: auto;
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    border-radius: 14px;
+    padding: 1.5rem;
+    font-family: inherit;
+    font-size: 1.4rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    cursor: pointer;
+    transition: background 0.15s, transform 0.1s;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .punch-btn:active:not(:disabled) { transform: scale(0.985); background: var(--accent-d); }
+  .punch-btn:disabled { background: #B8C4CB; cursor: not-allowed; }
+  .punch-btn:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+
+  .punch-hint { text-align: center; font-size: 0.82rem; color: var(--muted); margin-top: 0.6rem; }
+
+  /* ── 今日紀錄 ── */
+  .today { display: flex; flex-direction: column; gap: 0.4rem; }
+  .today-row {
+    display: flex; align-items: baseline; gap: 0.7rem;
+    font-size: 0.92rem;
+    padding: 0.35rem 0;
+    border-bottom: 1px solid var(--rule);
+  }
+  .today-row:last-child { border-bottom: none; }
+  .today-row .t { font-family: var(--mono); font-variant-numeric: tabular-nums; font-weight: 600; }
+  .today-row .k { color: var(--ink-2); }
+  .today-row .v { margin-left: auto; font-size: 0.8rem; }
+
+  .tag { padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 0.75rem; font-weight: 600; }
+  .tag.ok   { background: var(--ok-soft);   color: var(--ok); }
+  .tag.warn { background: var(--warn-soft); color: var(--warn); }
+  .tag.crit { background: var(--crit-soft); color: var(--crit); }
+  .tag.info { background: #E6EDF0; color: var(--accent); }
+
+  /* ── 結果畫面 ── */
+  #screen-result { align-items: center; justify-content: center; text-align: center; gap: 0.5rem; }
+  .result-icon { font-size: 3.5rem; line-height: 1; }
+  .result-time { font-size: 2.6rem; font-weight: 700; font-family: var(--mono); font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
+  .result-type { font-size: 1.2rem; font-weight: 650; }
+  .result-msg  { font-size: 0.95rem; color: var(--ink-2); max-width: 18rem; }
+  .result-hours {
+    margin-top: 0.75rem;
+    padding: 0.7rem 1.25rem;
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-radius: 10px;
+    font-size: 0.9rem;
+  }
+  .result-hours b { font-family: var(--mono); font-size: 1.05rem; }
+
+  /* ── 錯誤 ── */
+  .error-box {
+    background: var(--crit-soft);
+    border-radius: 12px;
+    padding: 1.1rem 1.25rem;
+    display: flex; flex-direction: column; gap: 0.5rem;
+  }
+  .error-box .t { font-weight: 700; color: var(--crit); }
+  .error-box .d { font-size: 0.9rem; color: var(--ink-2); }
+
+  /* ── 次要按鈕 ── */
+  .btn {
+    background: var(--surface);
+    color: var(--ink);
+    border: 1px solid var(--rule);
+    border-radius: 10px;
+    padding: 0.85rem 1.25rem;
+    font-family: inherit;
+    font-size: 0.95rem;
+    font-weight: 600;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .btn:active { background: var(--ground); }
+  .btn:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+  .btn.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .btn-row { display: flex; gap: 0.6rem; }
+  .btn-row .btn { flex: 1; }
+
+  /* ── 表單（註冊用） ── */
+  .field { display: flex; flex-direction: column; gap: 0.35rem; }
+  .field label { font-size: 0.85rem; color: var(--ink-2); font-weight: 600; }
+  .field input {
+    font-family: inherit;
+    font-size: 1rem;
+    padding: 0.8rem 0.9rem;
+    border: 1px solid var(--rule);
+    border-radius: 10px;
+    background: var(--surface);
+    color: var(--ink);
+  }
+  .field input:focus { outline: 2px solid var(--accent); outline-offset: 0; border-color: transparent; }
+  .field .hint { font-size: 0.78rem; color: var(--muted); }
+
+  .confirm-box {
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-radius: 12px;
+    padding: 1.25rem;
+    display: flex; flex-direction: column; gap: 0.7rem;
+  }
+  .confirm-row { display: flex; justify-content: space-between; align-items: baseline; }
+  .confirm-row .k { font-size: 0.85rem; color: var(--ink-2); }
+  .confirm-row .v { font-size: 1.05rem; font-weight: 650; }
+
+  /* ── 紀錄列表 ── */
+  .summary {
+    display: grid; grid-template-columns: 1fr 1fr;
+    gap: 1px; background: var(--rule);
+    border: 1px solid var(--rule); border-radius: 12px; overflow: hidden;
+  }
+  .summary div { background: var(--surface); padding: 0.9rem 1rem; }
+  .summary .k { font-size: 0.75rem; color: var(--muted); }
+  .summary .v { font-size: 1.35rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+
+  .log { display: flex; flex-direction: column; background: var(--surface); border: 1px solid var(--rule); border-radius: 12px; overflow: hidden; }
+  .log-row { display: grid; grid-template-columns: 3.2rem 1fr auto; gap: 0.6rem; align-items: center; padding: 0.8rem 1rem; border-bottom: 1px solid var(--rule); }
+  .log-row:last-child { border-bottom: none; }
+  .log-row .d { font-family: var(--mono); font-size: 0.85rem; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+  .log-row .t { font-family: var(--mono); font-size: 0.92rem; font-variant-numeric: tabular-nums; }
+  .log-row .h { font-size: 0.85rem; color: var(--ink-2); text-align: right; }
+
+  .empty { text-align: center; color: var(--muted); font-size: 0.9rem; padding: 2.5rem 1rem; }
+
+  /* ── 底部分頁 ── */
+  .tabs {
+    display: flex; border-top: 1px solid var(--rule);
+    background: var(--surface);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .tabs button {
+    flex: 1; background: none; border: none;
+    padding: 0.9rem 0.5rem; font-family: inherit; font-size: 0.85rem;
+    color: var(--muted); cursor: pointer; font-weight: 600;
+    border-top: 2px solid transparent; margin-top: -1px;
+  }
+  .tabs button.active { color: var(--accent); border-top-color: var(--accent); }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ground:   #10171C;
+      --surface:  #172129;
+      --ink:      #E6EDF2;
+      --ink-2:    #A0B0BC;
+      --muted:    #7A8B98;
+      --rule:     #26343E;
+      --accent:   #6FBCCB;
+      --accent-d: #8ACEDB;
+      --ok:       #5FBF92;
+      --ok-soft:  #14312A;
+      --warn:     #E0A64A;
+      --warn-soft:#33280F;
+      --crit:     #E07A6E;
+      --crit-soft:#351E1C;
+    }
+    .punch-btn { color: #0C1418; }
+    .btn.primary { color: #0C1418; }
+    .tag.info { background: #1C2E36; }
+    .punch-btn:disabled { background: #3A4A55; color: #7A8B98; }
+  }
+</style>
+</head>
+<body>
+
+<div class="app">
+
+  <!-- 載入中 -->
+  <div class="screen active" id="screen-loading">
+    <div class="spinner"></div>
+    <div class="loading-text" id="loading-text">載入中…</div>
+  </div>
+
+  <!-- 打卡主畫面 -->
+  <div class="screen" id="screen-punch">
+    <div class="header">
+      <div class="name" id="punch-name">—</div>
+      <div class="sub" id="punch-sub">—</div>
+    </div>
+
+    <div class="card" id="shift-card">
+      <div class="card-label">今日班表</div>
+      <div class="shift-time" id="shift-time">—</div>
+      <div class="shift-name" id="shift-name"></div>
+    </div>
+
+    <div class="locate" id="locate">
+      <span class="dot"></span>
+      <span class="txt" id="locate-text">定位中…</span>
+    </div>
+
+    <div class="card" id="today-card" style="display:none">
+      <div class="card-label">今日紀錄</div>
+      <div class="today" id="today-list"></div>
+    </div>
+
+    <button class="punch-btn" id="punch-btn" disabled>定位中…</button>
+    <div class="punch-hint" id="punch-hint"></div>
+
+    <button class="btn" id="setup-entry" style="display:none; margin-top:0.5rem">
+      設定打卡位置
+    </button>
+  </div>
+
+  <!-- 設定打卡位置（僅最高權限） -->
+  <div class="screen" id="screen-setup">
+    <div class="header">
+      <div class="name">設定打卡位置</div>
+      <div class="sub">人站在店裡按下設定，會以你當下的位置為準</div>
+    </div>
+
+    <div class="locate" id="setup-locate">
+      <span class="dot"></span>
+      <span class="txt" id="setup-locate-text">定位中…</span>
+    </div>
+
+    <div class="log" id="setup-venues"></div>
+
+    <div class="punch-hint" id="setup-hint"></div>
+
+    <button class="btn" id="setup-back" style="margin-top:auto">回打卡頁</button>
+  </div>
+
+  <!-- 打卡結果 -->
+  <div class="screen" id="screen-result">
+    <div class="result-icon" id="result-icon">✓</div>
+    <div class="result-time" id="result-time">—</div>
+    <div class="result-type" id="result-type">—</div>
+    <div class="result-msg" id="result-msg"></div>
+    <div class="result-hours" id="result-hours" style="display:none"></div>
+    <button class="btn" id="result-back" style="margin-top:1.5rem">回打卡頁</button>
+  </div>
+
+  <!-- 我的紀錄 -->
+  <div class="screen" id="screen-records">
+    <div class="header">
+      <div class="name">我的紀錄</div>
+      <div class="sub" id="records-month">—</div>
+    </div>
+
+    <div class="summary">
+      <div><div class="k">出勤天數</div><div class="v" id="sum-days">—</div></div>
+      <div><div class="k">本月時數</div><div class="v" id="sum-hours">—</div></div>
+    </div>
+
+    <div class="log" id="records-log"></div>
+  </div>
+
+  <!-- 註冊 -->
+  <div class="screen" id="screen-register">
+    <div class="header">
+      <div class="name">員工註冊</div>
+      <div class="sub">確認以下資料，完成後即可打卡</div>
+    </div>
+
+    <div class="confirm-box">
+      <div class="confirm-row"><span class="k">姓名</span><span class="v" id="reg-name">—</span></div>
+      <div class="confirm-row"><span class="k">所屬店</span><span class="v" id="reg-store">—</span></div>
+      <div class="confirm-row"><span class="k">身分</span><span class="v" id="reg-role">—</span></div>
+    </div>
+
+    <div id="reg-credentials" style="display:none; flex-direction:column; gap:0.9rem">
+      <div class="field">
+        <label for="reg-account">管理端帳號</label>
+        <input type="text" id="reg-account" autocomplete="username" autocapitalize="none" placeholder="用於電腦後台登入">
+      </div>
+      <div class="field">
+        <label for="reg-password">密碼</label>
+        <input type="password" id="reg-password" autocomplete="new-password" placeholder="至少 8 個字元">
+        <span class="hint">忘記密碼只能重設，系統不會保存明碼</span>
+      </div>
+    </div>
+
+    <div id="reg-error" style="display:none"></div>
+
+    <button class="btn primary" id="reg-submit" style="margin-top:auto">確認，完成註冊</button>
+  </div>
+
+  <!-- 錯誤 -->
+  <div class="screen" id="screen-error">
+    <div class="header"><div class="name">無法打卡</div></div>
+    <div class="error-box">
+      <div class="t" id="error-title">發生問題</div>
+      <div class="d" id="error-detail"></div>
+    </div>
+    <div class="btn-row" style="margin-top:auto">
+      <button class="btn primary" id="error-retry">重新整理</button>
+    </div>
+  </div>
+
+  <!-- 底部分頁 -->
+  <div class="tabs" id="tabs" style="display:none">
+    <button data-tab="punch" class="active">打卡</button>
+    <button data-tab="records">我的紀錄</button>
+  </div>
+
+</div>
+
+<script>
+// ─────────────────────────────────────────────
+// 設定：部署時填入這兩個值
+// ─────────────────────────────────────────────
+const CONFIG = {
+  LIFF_ID: '請填入 LIFF ID',
+  API_URL: 'https://script.google.com/macros/s/AKfycbwb1lzu9hqiFy_XO29ImhIqK7uBHRyHGC_Ol5B2URYPUpX7COcWyAPwWcWMJkbzUflM/exec',
+};
+
+// ─────────────────────────────────────────────
+// 與後端溝通
+//
+// Content-Type 用 text/plain 是刻意的：Apps Script 不回應 CORS 預檢請求，
+// 換成 application/json 會觸發預檢而失敗。內容本身仍是 JSON。
+// ─────────────────────────────────────────────
+async function api(action, params) {
+  const response = await fetch(CONFIG.API_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+    body: JSON.stringify(Object.assign({ action: action }, params || {})),
+    redirect: 'follow',
+  });
+
+  if (!response.ok) {
+    throw new Error('連線失敗（' + response.status + '），請稍後再試');
+  }
+
+  const result = await response.json();
+  if (!result.ok) {
+    const err = new Error(result.error || '發生未知錯誤');
+    err.code = result.code;
+    throw err;
+  }
+  return result.data;
+}
+
+// ─────────────────────────────────────────────
+// 畫面切換
+// ─────────────────────────────────────────────
+function show(id) {
+  document.querySelectorAll('.screen').forEach(function (el) {
+    el.classList.toggle('active', el.id === 'screen-' + id);
+  });
+}
+
+function showError(title, detail) {
+  document.getElementById('error-title').textContent = title;
+  document.getElementById('error-detail').textContent = detail || '';
+  document.getElementById('tabs').style.display = 'none';
+  show('error');
+}
+
+// ─────────────────────────────────────────────
+// 定位
+// ─────────────────────────────────────────────
+let currentPosition = null;
+let venueInfo = null;
+
+function requestLocation() {
+  return new Promise(function (resolve, reject) {
+    if (!navigator.geolocation) {
+      reject(new Error('這支手機不支援定位功能'));
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      function (pos) {
+        resolve({
+          lat: pos.coords.latitude,
+          lng: pos.coords.longitude,
+          accuracy: pos.coords.accuracy,
+        });
+      },
+      function (err) {
+        const messages = {
+          1: '你拒絕了定位權限。請到手機設定開啟 LINE 的定位權限後重試',
+          2: '目前抓不到位置訊號，請走到門口或窗邊再試一次',
+          3: '定位逾時，請走到訊號好一點的位置再試一次',
+        };
+        reject(new Error(messages[err.code] || '定位失敗，請再試一次'));
+      },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+    );
+  });
+}
+
+/** 兩點距離（公尺）。前端只用來即時顯示，實際判定以後端為準。 */
+function distanceMeters(lat1, lon1, lat2, lon2) {
+  const R = 6371000;
+  const toRad = function (d) { return d * Math.PI / 180; };
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a = Math.sin(dLat / 2) ** 2 +
+            Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+  return Math.round(R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
+}
+
+function updateLocateUI(state, text) {
+  const el = document.getElementById('locate');
+  el.className = 'locate' + (state ? ' ' + state : '');
+  document.getElementById('locate-text').innerHTML = text;
+}
+
+async function locate() {
+  const btn = document.getElementById('punch-btn');
+  btn.disabled = true;
+  btn.textContent = '定位中…';
+  updateLocateUI('', '定位中…');
+
+  try {
+    currentPosition = await requestLocation();
+
+    if (venueInfo) {
+      const d = distanceMeters(
+        currentPosition.lat, currentPosition.lng,
+        venueInfo.lat, venueInfo.lng
+      );
+
+      if (d <= venueInfo.radius) {
+        updateLocateUI('ok', '距離' + venueName + ' <span class="m">' + d + '</span> 公尺');
+        btn.disabled = false;
+        btn.textContent = nextAction + '打卡';
+        document.getElementById('punch-hint').textContent = '';
+      } else {
+        updateLocateUI('far', '距離' + venueName + ' <span class="m">' + d + '</span> 公尺，超出範圍');
+        btn.disabled = true;
+        btn.textContent = '不在打卡範圍內';
+        document.getElementById('punch-hint').textContent =
+          '打卡範圍為 ' + venueInfo.radius + ' 公尺內。若你人在店裡卻顯示超出範圍，請聯繫主管';
+      }
+    } else {
+      updateLocateUI('ok', '已取得定位');
+      btn.disabled = false;
+      btn.textContent = nextAction + '打卡';
+    }
+  } catch (err) {
+    currentPosition = null;
+    updateLocateUI('fail', err.message);
+    btn.disabled = true;
+    btn.textContent = '無法定位';
+    document.getElementById('punch-hint').textContent = '若重試多次都失敗，請聯繫主管協助補登';
+  }
+}
+
+// ─────────────────────────────────────────────
+// 打卡頁
+// ─────────────────────────────────────────────
+let idToken = null;
+let nextAction = '上班';
+let venueName = '';
+
+const WEEKDAYS = ['日', '一', '二', '三', '四', '五', '六'];
+
+function renderContext(ctx) {
+  nextAction = ctx.下一步;
+  venueName = ctx.店名;
+  venueInfo = ctx.場館座標;
+
+  document.getElementById('punch-name').textContent = ctx.姓名;
+
+  const d = new Date(ctx.日期 + 'T00:00:00+08:00');
+  document.getElementById('punch-sub').textContent =
+    ctx.店名 + ' · ' + (d.getMonth() + 1) + ' 月 ' + d.getDate() + ' 日 星期' + WEEKDAYS[d.getDay()];
+
+  const shiftCard = document.getElementById('shift-card');
+  if (ctx.今日班表) {
+    document.getElementById('shift-time').textContent =
+      ctx.今日班表.上班時間 + ' – ' + ctx.今日班表.下班時間;
+    document.getElementById('shift-name').textContent = ctx.今日班表.班別 || '';
+    shiftCard.style.display = '';
+  } else {
+    document.getElementById('shift-time').textContent = '今日未排班';
+    document.getElementById('shift-name').textContent = '仍可正常打卡，不會判定遲到';
+    shiftCard.style.display = '';
+  }
+
+  const todayCard = document.getElementById('today-card');
+  const list = document.getElementById('today-list');
+  if (ctx.今日紀錄 && ctx.今日紀錄.length) {
+    list.innerHTML = ctx.今日紀錄.map(function (r) {
+      return '<div class="today-row">' +
+        '<span class="t">' + r.時間 + '</span>' +
+        '<span class="k">' + r.類型 + '</span>' +
+        '<span class="v">' + verdictTag(r.判定) + '</span>' +
+        '</div>';
+    }).join('');
+    todayCard.style.display = '';
+  } else {
+    todayCard.style.display = 'none';
+  }
+
+  document.getElementById('setup-entry').style.display = ctx.可設定場館 ? '' : 'none';
+
+  if (!venueInfo) {
+    updateLocateUI('fail', ctx.店名 + ' 尚未設定打卡位置' + (ctx.可設定場館 ? '' : '，請聯繫主管'));
+    document.getElementById('punch-btn').disabled = true;
+    document.getElementById('punch-btn').textContent = '尚未設定打卡位置';
+    return false;
+  }
+  return true;
+}
+
+function verdictTag(verdict) {
+  const map = {
+    '準時': 'ok', '遲到': 'warn', '早退': 'warn',
+    '未排班出勤': 'info', '請假': 'info',
+  };
+  return '<span class="tag ' + (map[verdict] || 'info') + '">' + verdict + '</span>';
+}
+
+async function doPunch() {
+  const btn = document.getElementById('punch-btn');
+  btn.disabled = true;
+  btn.textContent = '打卡中…';
+
+  try {
+    const result = await api('punch', { idToken: idToken, location: currentPosition });
+
+    document.getElementById('result-icon').textContent = '✓';
+    document.getElementById('result-time').textContent = result.時間;
+    document.getElementById('result-type').textContent = result.類型 + '打卡完成';
+    document.getElementById('result-msg').textContent = result.訊息 || '';
+
+    const hoursEl = document.getElementById('result-hours');
+    if (result.類型 === '下班' && result.今日時數) {
+      hoursEl.innerHTML = '今日工時 <b>' + result.今日時數.顯示 + '</b>';
+      hoursEl.style.display = '';
+    } else {
+      hoursEl.style.display = 'none';
+    }
+
+    document.getElementById('tabs').style.display = 'none';
+    show('result');
+
+  } catch (err) {
+    document.getElementById('result-icon').textContent = '✕';
+    document.getElementById('result-time').textContent = '';
+    document.getElementById('result-type').textContent = '打卡未完成';
+    document.getElementById('result-msg').textContent = err.message;
+    document.getElementById('result-hours').style.display = 'none';
+    document.getElementById('tabs').style.display = 'none';
+    show('result');
+  }
+}
+
+async function loadPunchScreen() {
+  const ctx = await api('getPunchContext', { idToken: idToken });
+  const ok = renderContext(ctx);
+  document.getElementById('tabs').style.display = '';
+  show('punch');
+  if (ok) locate();
+}
+
+// ─────────────────────────────────────────────
+// 我的紀錄
+// ─────────────────────────────────────────────
+async function loadRecords() {
+  const log = document.getElementById('records-log');
+  log.innerHTML = '<div class="empty">載入中…</div>';
+  show('records');
+
+  try {
+    const data = await api('getMyRecords', { idToken: idToken });
+
+    document.getElementById('records-month').textContent = data.月份;
+    document.getElementById('sum-days').textContent = data.出勤天數;
+    document.getElementById('sum-hours').textContent = data.總時數;
+
+    if (!data.明細.length) {
+      log.innerHTML = '<div class="empty">本月還沒有打卡紀錄</div>';
+      return;
+    }
+
+    log.innerHTML = data.明細.map(function (d) {
+      const day = d.日期.slice(5).replace('-', '/');
+      const times = d.缺卡
+        ? '<span style="color:var(--crit)">' + (d.上班 || '—') + ' – ' + (d.下班 || '缺卡') + '</span>'
+        : d.上班 + ' – ' + d.下班;
+      return '<div class="log-row">' +
+        '<span class="d">' + day + '</span>' +
+        '<span class="t">' + times + '</span>' +
+        '<span class="h">' + (d.時數 ? d.時數 + ' 時' : '') + '</span>' +
+        '</div>';
+    }).join('');
+
+  } catch (err) {
+    log.innerHTML = '<div class="empty">' + err.message + '</div>';
+  }
+}
+
+// ─────────────────────────────────────────────
+// 設定打卡位置（僅最高權限）
+// ─────────────────────────────────────────────
+let setupPosition = null;
+
+async function loadSetupScreen() {
+  show('setup');
+  document.getElementById('tabs').style.display = 'none';
+  document.getElementById('setup-venues').innerHTML = '<div class="empty">載入中…</div>';
+  document.getElementById('setup-hint').textContent = '';
+
+  const locateEl = document.getElementById('setup-locate');
+  locateEl.className = 'locate';
+  document.getElementById('setup-locate-text').textContent = '定位中…';
+
+  try {
+    setupPosition = await requestLocation();
+    locateEl.className = 'locate ok';
+    document.getElementById('setup-locate-text').innerHTML =
+      '已取得位置，精度 <span class="m">' + Math.round(setupPosition.accuracy) + '</span> 公尺';
+  } catch (err) {
+    setupPosition = null;
+    locateEl.className = 'locate fail';
+    document.getElementById('setup-locate-text').textContent = err.message;
+  }
+
+  try {
+    const venues = await api('listVenuesForSetup', { idToken: idToken });
+    renderSetupVenues(venues);
+  } catch (err) {
+    document.getElementById('setup-venues').innerHTML =
+      '<div class="empty">' + err.message + '</div>';
+  }
+}
+
+function renderSetupVenues(venues) {
+  const container = document.getElementById('setup-venues');
+
+  container.innerHTML = venues.map(function (v) {
+    let status;
+    if (!v.已設定座標) {
+      status = '<span style="color:var(--crit)">尚未設定</span>';
+    } else if (setupPosition) {
+      const d = distanceMeters(setupPosition.lat, setupPosition.lng, v.緯度, v.經度);
+      const inRange = d <= v.允許半徑;
+      status = '<span style="color:' + (inRange ? 'var(--ok)' : 'var(--ink-2)') + '">距離 ' +
+               d + ' 公尺</span>';
+    } else {
+      status = '<span style="color:var(--ink-2)">已設定</span>';
+    }
+
+    return '<div class="log-row" style="grid-template-columns:1fr auto">' +
+      '<div><div style="font-weight:650">' + v.店名 + '</div>' +
+      '<div style="font-size:0.8rem">' + status +
+      ' · 半徑 ' + v.允許半徑 + ' 公尺</div></div>' +
+      '<button class="btn" data-store="' + v.店代碼 + '" data-name="' + v.店名 +
+      '" style="padding:0.5rem 0.8rem; font-size:0.85rem">設為此處</button>' +
+      '</div>';
+  }).join('');
+
+  container.querySelectorAll('button[data-store]').forEach(function (btn) {
+    btn.addEventListener('click', function () { applyVenueLocation(btn); });
+  });
+}
+
+async function applyVenueLocation(btn) {
+  if (!setupPosition) {
+    document.getElementById('setup-hint').textContent = '還沒取得定位，請先允許位置權限再試';
+    return;
+  }
+
+  const storeName = btn.dataset.name;
+  if (!confirm('要把「' + storeName + '」的打卡位置設成你現在的位置嗎？\n\n原本的設定會被覆蓋。')) {
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = '設定中…';
+
+  try {
+    const result = await api('setVenueLocationByLine', {
+      idToken: idToken,
+      storeCode: btn.dataset.store,
+      location: setupPosition,
+    });
+
+    document.getElementById('setup-hint').textContent =
+      result.店名 + ' 的打卡位置已更新，半徑 ' + result.允許半徑 + ' 公尺';
+
+    const venues = await api('listVenuesForSetup', { idToken: idToken });
+    renderSetupVenues(venues);
+
+  } catch (err) {
+    document.getElementById('setup-hint').textContent = err.message;
+    btn.disabled = false;
+    btn.textContent = '設為此處';
+  }
+}
+
+// ─────────────────────────────────────────────
+// 註冊
+// ─────────────────────────────────────────────
+async function loadRegisterScreen(token) {
+  const info = await api('getInviteInfo', { token: token });
+
+  document.getElementById('reg-name').textContent = info.姓名;
+  document.getElementById('reg-store').textContent = info.店名;
+  document.getElementById('reg-role').textContent = info.角色;
+
+  if (info.需要設定帳密) {
+    document.getElementById('reg-credentials').style.display = 'flex';
+  }
+
+  document.getElementById('reg-submit').onclick = async function () {
+    const btn = this;
+    const errEl = document.getElementById('reg-error');
+    btn.disabled = true;
+    btn.textContent = '註冊中…';
+    errEl.style.display = 'none';
+
+    try {
+      const credentials = info.需要設定帳密 ? {
+        帳號: document.getElementById('reg-account').value.trim(),
+        密碼: document.getElementById('reg-password').value,
+      } : null;
+
+      await api('completeRegistration', {
+        token: token,
+        idToken: idToken,
+        credentials: credentials,
+      });
+
+      document.getElementById('result-icon').textContent = '✓';
+      document.getElementById('result-time').textContent = '';
+      document.getElementById('result-type').textContent = '註冊完成';
+      document.getElementById('result-msg').textContent =
+        info.姓名 + '，你已經可以開始打卡了。之後從 LINE 的選單進入即可。';
+      document.getElementById('result-hours').style.display = 'none';
+      document.getElementById('result-back').textContent = '開始使用';
+      show('result');
+
+    } catch (err) {
+      errEl.innerHTML = '<div class="error-box"><div class="t">註冊失敗</div>' +
+        '<div class="d">' + err.message + '</div></div>';
+      errEl.style.display = '';
+      btn.disabled = false;
+      btn.textContent = '確認，完成註冊';
+    }
+  };
+
+  show('register');
+}
+
+// ─────────────────────────────────────────────
+// 啟動
+// ─────────────────────────────────────────────
+async function main() {
+  const setText = function (t) { document.getElementById('loading-text').textContent = t; };
+
+  if (CONFIG.LIFF_ID.indexOf('請填入') === 0 || CONFIG.API_URL.indexOf('請填入') === 0) {
+    showError('尚未完成設定', '這個頁面的 LIFF ID 或後端網址還沒填入，請聯繫系統管理者。');
+    return;
+  }
+
+  try {
+    setText('連線中…');
+    await liff.init({ liffId: CONFIG.LIFF_ID });
+
+    if (!liff.isLoggedIn()) {
+      liff.login();
+      return;
+    }
+
+    idToken = liff.getIDToken();
+    if (!idToken) {
+      showError('無法取得身分', '請完全關閉 LINE 後重新開啟，再從選單進入打卡頁。');
+      return;
+    }
+
+    const inviteToken = new URLSearchParams(location.search).get('token');
+
+    if (inviteToken) {
+      setText('讀取註冊資料…');
+      await loadRegisterScreen(inviteToken);
+    } else {
+      setText('讀取資料…');
+      await loadPunchScreen();
+    }
+
+  } catch (err) {
+    if (err.code === 'NOT_REGISTERED') {
+      showError('尚未註冊', '這個 LINE 帳號還沒有完成員工註冊，請向主管索取註冊連結。');
+    } else if (err.code === 'DISABLED') {
+      showError('帳號已停用', '此帳號目前為停用狀態，如有疑問請聯繫主管。');
+    } else {
+      showError('無法載入', err.message || '請稍後再試一次。');
+    }
+  }
+}
+
+// 事件綁定
+document.getElementById('punch-btn').addEventListener('click', doPunch);
+document.getElementById('result-back').addEventListener('click', function () {
+  document.getElementById('result-back').textContent = '回打卡頁';
+  loadPunchScreen().catch(function (err) {
+    showError('無法載入', err.message);
+  });
+});
+document.getElementById('error-retry').addEventListener('click', function () {
+  location.reload();
+});
+document.getElementById('setup-entry').addEventListener('click', loadSetupScreen);
+document.getElementById('setup-back').addEventListener('click', function () {
+  loadPunchScreen().catch(function (err) { showError('無法載入', err.message); });
+});
+document.getElementById('tabs').addEventListener('click', function (e) {
+  const btn = e.target.closest('button');
+  if (!btn) return;
+
+  document.querySelectorAll('#tabs button').forEach(function (b) {
+    b.classList.toggle('active', b === btn);
+  });
+
+  if (btn.dataset.tab === 'punch') {
+    loadPunchScreen().catch(function (err) { showError('無法載入', err.message); });
+  } else {
+    loadRecords();
+  }
+});
+
+main();
+</script>
+</body>
+</html>
