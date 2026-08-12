@@ -418,16 +418,35 @@ const CONFIG = {
 // Content-Type 用 text/plain 是刻意的：Apps Script 不回應 CORS 預檢請求，
 // 換成 application/json 會觸發預檢而失敗。內容本身仍是 JSON。
 // ─────────────────────────────────────────────
-async function api(action, params) {
-  const response = await fetch(CONFIG.API_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-    body: JSON.stringify(Object.assign({ action: action }, params || {})),
-    redirect: 'follow',
-  });
+async function api(action, params, attempt) {
+  attempt = attempt || 1;
+
+  // Apps Script 的轉址偶爾會掉（表現為 404）。查詢類的自動重試，
+  // 但打卡本身不重試——萬一是回應遺失而非請求失敗，重試會打成兩筆。
+  const canRetry = /^get/.test(action) && attempt < 3;
+
+  let response;
+  try {
+    response = await fetch(CONFIG.API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify(Object.assign({ action: action }, params || {})),
+      redirect: 'follow',
+    });
+  } catch (netErr) {
+    if (canRetry) {
+      await new Promise(function (r) { setTimeout(r, 600 * attempt); });
+      return api(action, params, attempt + 1);
+    }
+    throw new Error('連線中斷，請確認網路後再試一次');
+  }
 
   if (!response.ok) {
-    throw new Error('連線失敗（' + response.status + '），請稍後再試');
+    if (canRetry) {
+      await new Promise(function (r) { setTimeout(r, 600 * attempt); });
+      return api(action, params, attempt + 1);
+    }
+    throw new Error('連線失敗（' + response.status + '），請再按一次');
   }
 
   const result = await response.json();

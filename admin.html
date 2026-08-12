@@ -674,18 +674,44 @@ let venues = [];
 let employees = [];
 
 // ── API ──────────────────────────────────────────────
-async function api(action, params) {
+//
+// Apps Script 的網頁應用程式會把請求轉一次址才回結果，那一跳偶爾會掉，
+// 表現出來就是 404。讀取類的操作自動重試；寫入類不重試，
+// 因為如果實際已經寫進去只是回應遺失，重試會造成重複資料。
+
+function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+
+function isReadOnly(action) { return /^(list|get)/.test(action); }
+
+async function api(action, params, attempt) {
+  attempt = attempt || 1;
+
   const body = Object.assign({ action: action }, params || {});
   if (session && session.token) body.sessionToken = session.token;
 
-  const res = await fetch(API_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-    body: JSON.stringify(body),
-    redirect: 'follow',
-  });
+  let res;
+  try {
+    res = await fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify(body),
+      redirect: 'follow',
+    });
+  } catch (netErr) {
+    if (isReadOnly(action) && attempt < 3) {
+      await sleep(600 * attempt);
+      return api(action, params, attempt + 1);
+    }
+    throw new Error('連線中斷，請檢查網路後再試一次');
+  }
 
-  if (!res.ok) throw new Error('連線失敗（' + res.status + '）');
+  if (!res.ok) {
+    if (isReadOnly(action) && attempt < 3) {
+      await sleep(600 * attempt);
+      return api(action, params, attempt + 1);
+    }
+    throw new Error('連線失敗（' + res.status + '），請再按一次');
+  }
 
   const json = await res.json();
   if (!json.ok) {
