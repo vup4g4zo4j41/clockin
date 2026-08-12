@@ -26,8 +26,7 @@
     --mono: ui-monospace, "SF Mono", Menlo, monospace;
   }
 
-  @media (prefers-color-scheme: dark) {
-    :root {
+  :root[data-theme="dark"] {
       --ground:   #10171C;
       --surface:  #172129;
       --surface-2:#1D2932;
@@ -44,7 +43,6 @@
       --warn-soft:#33280F;
       --crit:     #E07A6E;
       --crit-soft:#351E1C;
-    }
   }
 
   * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -137,7 +135,7 @@
   .btn.sm { padding: 0.3rem 0.6rem; font-size: 0.82rem; }
   .btn.danger { color: var(--crit); }
   .btn:disabled { opacity: 0.5; cursor: not-allowed; }
-  @media (prefers-color-scheme: dark) { .btn.primary { color: #0C1418; } }
+  :root[data-theme="dark"] .btn.primary { color: #0C1418; }
 
   /* ── 統計卡 ── */
   .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 1px;
@@ -296,23 +294,20 @@
   .sh-official   { background: #E5E9ED; color: #4A5A6B; }
   .sh-none       { color: var(--muted); }
 
-  @media (prefers-color-scheme: dark) {
-    .sh-sky      { background: #103244; color: #8CCBE4; }
-    .sh-amber    { background: #3A2C10; color: #E0B66A; }
-    .sh-violet   { background: #2A2242; color: #B9A5E8; }
-    .sh-teal     { background: #103330; color: #77C7BC; }
-    .sh-rose     { background: #3B1F27; color: #E29CAC; }
-    .sh-lime     { background: #263312; color: #AFCB74; }
-    .sh-indigo   { background: #1F2542; color: #A0AAE6; }
-    .sh-slate    { background: #232C33; color: #A3B3BF; }
-
-    .sh-rest       { background: #16311C; color: #86C795; }
-    .sh-holiday    { background: #122C42; color: #85B9E0; }
-    .sh-leave      { background: #3A2413; color: #E0A46C; }
-    .sh-designated { background: #33290D; color: #DCC372; }
-    .sh-adjust     { background: #2C2035; color: #C3A0D4; }
-    .sh-official   { background: #242B31; color: #9BAAB6; }
-  }
+  :root[data-theme="dark"] .sh-sky      { background: #103244; color: #8CCBE4; }
+  :root[data-theme="dark"] .sh-amber    { background: #3A2C10; color: #E0B66A; }
+  :root[data-theme="dark"] .sh-violet   { background: #2A2242; color: #B9A5E8; }
+  :root[data-theme="dark"] .sh-teal     { background: #103330; color: #77C7BC; }
+  :root[data-theme="dark"] .sh-rose     { background: #3B1F27; color: #E29CAC; }
+  :root[data-theme="dark"] .sh-lime     { background: #263312; color: #AFCB74; }
+  :root[data-theme="dark"] .sh-indigo   { background: #1F2542; color: #A0AAE6; }
+  :root[data-theme="dark"] .sh-slate    { background: #232C33; color: #A3B3BF; }
+  :root[data-theme="dark"] .sh-rest       { background: #16311C; color: #86C795; }
+  :root[data-theme="dark"] .sh-holiday    { background: #122C42; color: #85B9E0; }
+  :root[data-theme="dark"] .sh-leave      { background: #3A2413; color: #E0A46C; }
+  :root[data-theme="dark"] .sh-designated { background: #33290D; color: #DCC372; }
+  :root[data-theme="dark"] .sh-adjust     { background: #2C2035; color: #C3A0D4; }
+  :root[data-theme="dark"] .sh-official   { background: #242B31; color: #9BAAB6; }
 
   /* 顏色選擇色塊 */
   .swatch {
@@ -351,6 +346,7 @@
       <span class="who">
         <span id="who-name">—</span>
         <span class="role-tag" id="who-role">—</span>
+        <button class="btn sm" id="theme-toggle" title="切換深色／淺色">☾</button>
         <button class="btn sm" id="logout">登出</button>
       </span>
     </div>
@@ -2173,6 +2169,21 @@ $('venue-table').addEventListener('click', async function (e) {
     alert(err.message);
   }
 });
+
+// ── 深色／淺色 ────────────────────────────────────────
+// 預設淺色，不跟隨系統設定；切換後記住選擇。
+function applyTheme(theme) {
+  document.documentElement.setAttribute('data-theme', theme);
+  localStorage.setItem('clockin_theme', theme);
+  $('theme-toggle').textContent = theme === 'dark' ? '☀' : '☾';
+}
+
+$('theme-toggle').addEventListener('click', function () {
+  const current = document.documentElement.getAttribute('data-theme');
+  applyTheme(current === 'dark' ? 'light' : 'dark');
+});
+
+applyTheme(localStorage.getItem('clockin_theme') || 'light');
 
 // ── 啟動 ─────────────────────────────────────────────
 (function init() {
