@@ -1137,7 +1137,11 @@ function renderSchedule(range) {
   scheduleData.員工.forEach(function (e) {
     const empId = e.員工編號;
     const row = scheduleData.班表[empId] || {};
-    body += '<tr><td class="emp">' + esc(e.姓名) + '</td>';
+    // 沒綁定 LINE 的人排了班也打不了卡，標出來提醒去發註冊連結
+    const pending = e.已註冊 === false
+      ? ' <span class="tag warn" style="font-size:0.62rem" title="尚未用 LINE 註冊，目前無法打卡">未註冊</span>'
+      : '';
+    body += '<tr><td class="emp">' + esc(e.姓名) + pending + '</td>';
 
     dates.forEach(function (d) {
       const wd = new Date(d + 'T12:00:00+08:00').getDay();
