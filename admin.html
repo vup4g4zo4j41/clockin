@@ -221,6 +221,53 @@
   #toast.show { opacity: 1; }
 
   .hidden { display: none !important; }
+
+  /* ── 班表格狀 ── */
+  table.sched { font-size: 0.82rem; }
+  table.sched th, table.sched td { padding: 0.4rem 0.35rem; text-align: center; white-space: nowrap; }
+  table.sched th.emp, table.sched td.emp {
+    position: sticky; left: 0; z-index: 3;
+    background: var(--surface); text-align: left;
+    min-width: 5.5rem; border-right: 1px solid var(--rule);
+  }
+  table.sched tbody tr:hover td.emp { background: var(--surface-2); }
+  table.sched th.day { min-width: 2.6rem; font-size: 0.7rem; line-height: 1.25; }
+  table.sched th.day .wd { display: block; color: var(--muted); font-weight: 500; }
+  table.sched th.weekend, table.sched td.weekend { background: var(--surface-2); }
+  table.sched td.cell {
+    cursor: pointer; border-radius: 4px;
+    font-weight: 600; color: var(--accent);
+  }
+  table.sched td.cell:hover { background: var(--accent-soft); }
+  table.sched td.cell.off { color: var(--muted); font-weight: 400; }
+  table.sched tfoot td {
+    font-size: 0.72rem; color: var(--ink-2);
+    border-top: 1px solid var(--rule); padding: 0.35rem;
+  }
+  table.sched tfoot td.emp { font-weight: 600; }
+  table.sched tfoot td.low { color: var(--crit); font-weight: 700; }
+
+  #shift-picker {
+    position: absolute; display: none; z-index: 60;
+    background: var(--surface); border: 1px solid var(--rule);
+    border-radius: 10px; padding: 0.35rem; min-width: 11rem;
+    box-shadow: 0 8px 24px rgba(10,20,26,0.18);
+  }
+  #shift-picker.show { display: block; }
+  #shift-picker button {
+    display: block; width: 100%; text-align: left;
+    background: none; border: none; font-family: inherit; font-size: 0.88rem;
+    padding: 0.5rem 0.7rem; border-radius: 6px; cursor: pointer; color: var(--ink);
+  }
+  #shift-picker button:hover { background: var(--surface-2); }
+  #shift-picker button .t { color: var(--muted); font-size: 0.78rem; margin-left: 0.4rem; }
+  #shift-picker .pick-head {
+    font-size: 0.75rem; color: var(--muted); padding: 0.35rem 0.7rem;
+    border-bottom: 1px solid var(--rule); margin-bottom: 0.3rem;
+  }
+
+  /* ── 常態班表格 ── */
+  #pattern-table select { font-size: 0.82rem; padding: 0.3rem 0.4rem; min-width: 5rem; }
 </style>
 </head>
 <body>
@@ -256,6 +303,8 @@
     </div>
     <nav id="nav">
       <button data-view="daily" class="active">今日出勤</button>
+      <button data-view="schedule">班表</button>
+      <button data-view="shifts">班別</button>
       <button data-view="monthly">月統計</button>
       <button data-view="employees">員工</button>
       <button data-view="venues">場館</button>
@@ -282,6 +331,57 @@
           <span class="count" id="daily-count"></span>
         </div>
         <div class="scroll"><table id="daily-table"></table></div>
+      </div>
+    </section>
+
+    <!-- 班表 -->
+    <section class="view" id="view-schedule">
+      <div class="toolbar">
+        <select id="sched-store"></select>
+        <input type="month" id="sched-month">
+        <button class="btn" id="sched-reload">查詢</button>
+        <span class="spacer"></span>
+        <button class="btn primary" id="btn-generate">依常態班生成</button>
+      </div>
+
+      <div class="msg" style="background:var(--surface);border:1px solid var(--rule);font-size:0.85rem;color:var(--ink-2)">
+        點任一格可以改那天的班。系統以排班表判定遲到早退——<strong>沒排班的日子照樣能打卡，只是不判遲到</strong>。
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <h2>班表</h2>
+          <span class="count" id="sched-count"></span>
+        </div>
+        <div class="scroll"><table class="sched" id="sched-table"></table></div>
+      </div>
+    </section>
+
+    <!-- 班別 -->
+    <section class="view" id="view-shifts">
+      <div class="toolbar">
+        <span class="spacer"></span>
+        <button class="btn primary" id="btn-add-shift">新增班別</button>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <h2>班別設定</h2>
+          <span class="count" id="shift-count"></span>
+        </div>
+        <div class="scroll"><table id="shift-table"></table></div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <h2>常態班</h2>
+          <span class="count">每個人的固定班型，生成班表時的依據</span>
+        </div>
+        <div class="toolbar" style="padding: 0.85rem 1.1rem 0">
+          <select id="pattern-store"></select>
+          <button class="btn" id="pattern-reload">查詢</button>
+        </div>
+        <div class="scroll"><table id="pattern-table"></table></div>
       </div>
     </section>
 
@@ -379,6 +479,89 @@
     </div>
   </div>
 </div>
+
+<!-- 新增班別 -->
+<div class="overlay" id="modal-shift">
+  <div class="modal">
+    <h2>新增班別</h2>
+    <div class="field">
+      <label for="ns-name">名稱</label>
+      <input type="text" id="ns-name" placeholder="早班">
+    </div>
+    <div class="field" id="ns-scope-field">
+      <label for="ns-scope">適用範圍</label>
+      <select id="ns-scope"></select>
+      <span class="hint">通用＝六間店都能用；選單店＝只有那間店排班時看得到</span>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem">
+      <div class="field">
+        <label for="ns-start">上班時間</label>
+        <input type="time" id="ns-start" value="07:00">
+      </div>
+      <div class="field">
+        <label for="ns-end">下班時間</label>
+        <input type="time" id="ns-end" value="16:00">
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem">
+      <div class="field">
+        <label for="ns-rest">休息時數</label>
+        <input type="text" id="ns-rest" value="1" inputmode="decimal">
+        <span class="hint">單位小時</span>
+      </div>
+      <div class="field">
+        <label for="ns-grace">遲到寬限</label>
+        <input type="text" id="ns-grace" value="5" inputmode="numeric">
+        <span class="hint">單位分鐘</span>
+      </div>
+    </div>
+    <div id="ns-preview" class="msg ok" style="display:none"></div>
+    <div id="ns-msg"></div>
+    <div class="modal-actions">
+      <button class="btn" data-close>取消</button>
+      <button class="btn primary" id="ns-submit">建立</button>
+    </div>
+  </div>
+</div>
+
+<!-- 生成班表 -->
+<div class="overlay" id="modal-generate">
+  <div class="modal">
+    <h2>依常態班生成班表</h2>
+    <p style="font-size:0.88rem;color:var(--ink-2)">
+      系統會依每個人的常態班，把這段期間的班表鋪出來。沒設常態班的人不會被排到。
+    </p>
+    <div class="field">
+      <label for="gen-store">店別</label>
+      <select id="gen-store"></select>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem">
+      <div class="field">
+        <label for="gen-from">起日</label>
+        <input type="date" id="gen-from">
+      </div>
+      <div class="field">
+        <label for="gen-to">迄日</label>
+        <input type="date" id="gen-to">
+      </div>
+    </div>
+    <div class="field">
+      <label style="display:flex;align-items:center;gap:0.5rem;font-weight:500">
+        <input type="checkbox" id="gen-overwrite" style="width:auto">
+        覆蓋已經排好的班
+      </label>
+      <span class="hint">不勾的話，已經排過或手動調整過的日子會保留不動</span>
+    </div>
+    <div id="gen-msg"></div>
+    <div class="modal-actions">
+      <button class="btn" data-close>取消</button>
+      <button class="btn primary" id="gen-submit">生成</button>
+    </div>
+  </div>
+</div>
+
+<!-- 班別選擇浮動選單 -->
+<div id="shift-picker"></div>
 
 <!-- 補登打卡 -->
 <div class="overlay" id="modal-punch">
@@ -554,6 +737,7 @@ async function enterApp() {
 
   $('daily-date').value = todayStr();
   $('monthly-month').value = monthStr();
+  $('sched-month').value = monthStr();
 
   await loadDaily();
 }
@@ -567,7 +751,21 @@ function fillStoreSelects() {
   $('daily-store').innerHTML = all + opts;
   $('monthly-store').innerHTML = all + opts;
   $('emp-store').innerHTML = all + opts;
+  $('pattern-store').innerHTML = all + opts;
   $('ne-store').innerHTML = opts;
+
+  // 班表以單店為單位排，不提供「全部分店」
+  $('sched-store').innerHTML = opts;
+  $('gen-store').innerHTML = opts;
+
+  // 班別適用範圍：最高權限才能建通用班別
+  $('ns-scope').innerHTML =
+    (session.employee.角色 === '最高權限' ? '<option value="通用">通用（六店共用）</option>' : '') + opts;
+
+  // 預設帶自己所屬店，店長進來就直接是自己那間
+  if (session.employee.所屬店) {
+    $('sched-store').value = session.employee.所屬店;
+  }
 }
 
 // ── 分頁切換 ──────────────────────────────────────────
@@ -583,8 +781,8 @@ $('nav').addEventListener('click', function (e) {
   });
 
   const loaders = {
-    daily: loadDaily, monthly: loadMonthly,
-    employees: loadEmployees, venues: loadVenues, audit: loadAudit,
+    daily: loadDaily, monthly: loadMonthly, schedule: loadSchedule,
+    shifts: loadShifts, employees: loadEmployees, venues: loadVenues, audit: loadAudit,
   };
   if (loaders[btn.dataset.view]) loaders[btn.dataset.view]();
 });
@@ -777,6 +975,385 @@ async function loadEmployees() {
 
 $('emp-reload').addEventListener('click', loadEmployees);
 $('emp-store').addEventListener('change', loadEmployees);
+
+// ── 班表 ─────────────────────────────────────────────
+const WEEKDAY_LABEL = ['日', '一', '二', '三', '四', '五', '六'];
+let scheduleData = null;
+
+function monthRange(ym) {
+  const y = Number(ym.slice(0, 4));
+  const m = Number(ym.slice(5, 7));
+  const last = new Date(y, m, 0).getDate();
+  return { from: ym + '-01', to: ym + '-' + ('0' + last).slice(-2), days: last };
+}
+
+async function loadSchedule() {
+  const table = $('sched-table');
+  table.innerHTML = '<tbody><tr><td class="empty">載入中…</td></tr></tbody>';
+
+  const store = $('sched-store').value;
+  if (!store) {
+    table.innerHTML = '<tbody><tr><td class="empty">請先選擇一間店。班表以單店為單位排。</td></tr></tbody>';
+    return;
+  }
+
+  const range = monthRange($('sched-month').value || monthStr());
+
+  try {
+    scheduleData = await api('getSchedule', { storeCode: store, from: range.from, to: range.to });
+
+    if (!scheduleData.員工.length) {
+      table.innerHTML = '<tbody><tr><td class="empty">這間店還沒有在職員工</td></tr></tbody>';
+      return;
+    }
+    if (!scheduleData.班別.length) {
+      table.innerHTML = '<tbody><tr><td class="empty">' +
+        '還沒有可用的班別，請先到「班別」分頁新增（例如早班 07:00–16:00）' +
+        '</td></tr></tbody>';
+      return;
+    }
+
+    renderSchedule(range);
+
+  } catch (err) {
+    table.innerHTML = '<tbody><tr><td class="empty">' + esc(err.message) + '</td></tr></tbody>';
+  }
+}
+
+function renderSchedule(range) {
+  const dates = [];
+  for (let i = 0; i < range.days; i++) {
+    dates.push(addDaysStr(range.from, i));
+  }
+
+  let head = '<thead><tr><th class="emp">姓名</th>';
+  dates.forEach(function (d) {
+    const wd = new Date(d + 'T12:00:00+08:00').getDay();
+    const weekend = (wd === 0 || wd === 6) ? ' weekend' : '';
+    head += '<th class="day' + weekend + '">' + Number(d.slice(8)) +
+            '<span class="wd">' + WEEKDAY_LABEL[wd] + '</span></th>';
+  });
+  head += '</tr></thead>';
+
+  let body = '<tbody>';
+  scheduleData.員工.forEach(function (e) {
+    const empId = e.員工編號;
+    const row = scheduleData.班表[empId] || {};
+    body += '<tr><td class="emp">' + esc(e.姓名) + '</td>';
+
+    dates.forEach(function (d) {
+      const wd = new Date(d + 'T12:00:00+08:00').getDay();
+      const weekend = (wd === 0 || wd === 6) ? ' weekend' : '';
+      const cell = row[d];
+      const label = cell && cell.班別名稱 ? cell.班別名稱.slice(0, 1) : '休';
+      const title = cell && cell.班別名稱
+        ? cell.班別名稱 + ' ' + cell.上班時間 + '–' + cell.下班時間
+        : '休假';
+
+      body += '<td class="cell' + weekend + (cell && cell.班別名稱 ? '' : ' off') +
+              '" data-emp="' + esc(empId) + '" data-name="' + esc(e.姓名) +
+              '" data-date="' + d + '" title="' + esc(title) + '">' + esc(label) + '</td>';
+    });
+    body += '</tr>';
+  });
+  body += '</tbody>';
+
+  let foot = '<tfoot><tr><td class="emp">當日人數</td>';
+  dates.forEach(function (d) {
+    const counts = scheduleData.每日人數[d] || {};
+    const total = Object.keys(counts).reduce(function (s, k) { return s + counts[k]; }, 0);
+    const wd = new Date(d + 'T12:00:00+08:00').getDay();
+    const weekend = (wd === 0 || wd === 6) ? ' weekend' : '';
+    foot += '<td class="' + (total === 0 ? 'low' : '') + weekend + '">' + total + '</td>';
+  });
+  foot += '</tr></tfoot>';
+
+  $('sched-table').innerHTML = head + body + foot;
+  $('sched-count').textContent = scheduleData.員工.length + ' 人 · ' + range.days + ' 天';
+}
+
+function addDaysStr(dateStr, n) {
+  const d = new Date(dateStr + 'T12:00:00+08:00');
+  d.setDate(d.getDate() + n);
+  return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2);
+}
+
+$('sched-reload').addEventListener('click', loadSchedule);
+$('sched-store').addEventListener('change', loadSchedule);
+$('sched-month').addEventListener('change', loadSchedule);
+
+// 點格子選班別
+$('sched-table').addEventListener('click', function (e) {
+  const cell = e.target.closest('td.cell');
+  if (!cell) return;
+
+  const picker = $('shift-picker');
+  const rect = cell.getBoundingClientRect();
+
+  picker.innerHTML =
+    '<div class="pick-head">' + esc(cell.dataset.name) + ' · ' + cell.dataset.date + '</div>' +
+    '<button data-code="">休假</button>' +
+    scheduleData.班別.map(function (s) {
+      return '<button data-code="' + esc(s.班別代碼) + '">' + esc(s.名稱) +
+             '<span class="t">' + s.上班時間 + '–' + s.下班時間 + '</span></button>';
+    }).join('');
+
+  picker.dataset.emp = cell.dataset.emp;
+  picker.dataset.date = cell.dataset.date;
+
+  picker.style.left = Math.min(rect.left + window.scrollX, window.innerWidth - 200) + 'px';
+  picker.style.top = (rect.bottom + window.scrollY + 4) + 'px';
+  picker.classList.add('show');
+  e.stopPropagation();
+});
+
+document.addEventListener('click', function (e) {
+  const picker = $('shift-picker');
+  if (!picker.classList.contains('show')) return;
+
+  const btn = e.target.closest('#shift-picker button');
+  if (!btn) { picker.classList.remove('show'); return; }
+
+  const emp = picker.dataset.emp;
+  const date = picker.dataset.date;
+  picker.classList.remove('show');
+
+  api('setScheduleCell', { employeeId: emp, date: date, shiftCode: btn.dataset.code })
+    .then(function () {
+      toast('已更新 ' + date);
+      loadSchedule();
+    })
+    .catch(function (err) { alert(err.message); });
+});
+
+// 生成班表
+$('btn-generate').addEventListener('click', function () {
+  const range = monthRange($('sched-month').value || monthStr());
+  $('gen-store').value = $('sched-store').value || '';
+  $('gen-from').value = range.from;
+  $('gen-to').value = range.to;
+  $('gen-overwrite').checked = false;
+  showMsg('gen-msg', '');
+  openModal('modal-generate');
+});
+
+$('gen-submit').addEventListener('click', async function () {
+  const btn = this;
+  btn.disabled = true; btn.textContent = '生成中…';
+  showMsg('gen-msg', '');
+
+  try {
+    const result = await api('generateSchedule', {
+      storeCode: $('gen-store').value,
+      from: $('gen-from').value,
+      to: $('gen-to').value,
+      overwrite: $('gen-overwrite').checked,
+    });
+
+    closeModal('modal-generate');
+    toast('新增 ' + result.新增 + ' 筆' +
+          (result.覆蓋 ? '、覆蓋 ' + result.覆蓋 + ' 筆' : '') +
+          (result.略過 ? '、保留既有 ' + result.略過 + ' 筆' : ''));
+
+    $('sched-store').value = $('gen-store').value;
+    loadSchedule();
+
+  } catch (err) {
+    showMsg('gen-msg', esc(err.message));
+  } finally {
+    btn.disabled = false; btn.textContent = '生成';
+  }
+});
+
+// ── 班別 ─────────────────────────────────────────────
+let shiftTypes = [];
+
+async function loadShifts() {
+  const table = $('shift-table');
+  table.innerHTML = '<tbody><tr><td class="empty">載入中…</td></tr></tbody>';
+
+  try {
+    shiftTypes = await api('listShiftTypes', {});
+    $('shift-count').textContent = shiftTypes.length + ' 種';
+
+    if (!shiftTypes.length) {
+      table.innerHTML = '<tbody><tr><td class="empty">' +
+        '還沒有班別。按右上角「新增班別」建立第一個，例如早班 07:00–16:00 休息 1 小時。' +
+        '</td></tr></tbody>';
+    } else {
+      table.innerHTML =
+        '<thead><tr><th>代碼</th><th>名稱</th><th>適用</th><th>時間</th>' +
+        '<th class="num">休息</th><th class="num">應出勤</th><th class="num">寬限</th><th></th></tr></thead><tbody>' +
+        shiftTypes.map(function (s) {
+          return '<tr>' +
+            '<td class="mono">' + esc(s.班別代碼) + '</td>' +
+            '<td>' + esc(s.名稱) + '</td>' +
+            '<td>' + (s.適用店 === '通用'
+              ? '<span class="tag info">通用</span>'
+              : '<span class="tag mute">' + esc(storeName(s.適用店)) + '</span>') + '</td>' +
+            '<td class="mono">' + esc(s.上班時間) + '–' + esc(s.下班時間) + '</td>' +
+            '<td class="num">' + s.休息時數 + ' 時</td>' +
+            '<td class="num">' + s.應出勤時數 + ' 時</td>' +
+            '<td class="num">' + s.遲到寬限 + ' 分</td>' +
+            '<td class="actions"><button class="btn sm danger" data-disable-shift="' +
+              esc(s.班別代碼) + '" data-name="' + esc(s.名稱) + '">停用</button></td>' +
+            '</tr>';
+        }).join('') + '</tbody>';
+    }
+
+    loadPatterns();
+
+  } catch (err) {
+    table.innerHTML = '<tbody><tr><td class="empty">' + esc(err.message) + '</td></tr></tbody>';
+  }
+}
+
+$('shift-table').addEventListener('click', async function (e) {
+  const btn = e.target.closest('button[data-disable-shift]');
+  if (!btn) return;
+
+  if (!confirm('停用「' + btn.dataset.name + '」？\n\n已經排定的班表不受影響，只是之後排班時不能再選這個班別。')) return;
+
+  try {
+    await api('disableShiftType', { code: btn.dataset.disableShift });
+    toast('已停用');
+    loadShifts();
+  } catch (err) { alert(err.message); }
+});
+
+$('btn-add-shift').addEventListener('click', function () {
+  $('ns-name').value = '';
+  $('ns-start').value = '07:00';
+  $('ns-end').value = '16:00';
+  $('ns-rest').value = '1';
+  $('ns-grace').value = '5';
+  showMsg('ns-msg', '');
+  updateShiftPreview();
+
+  if (session.employee.角色 !== '最高權限') {
+    $('ns-scope-field').classList.add('hidden');
+  }
+  openModal('modal-shift');
+});
+
+function updateShiftPreview() {
+  const start = $('ns-start').value;
+  const end = $('ns-end').value;
+  const rest = Number($('ns-rest').value) || 0;
+  const el = $('ns-preview');
+
+  if (!start || !end) { el.style.display = 'none'; return; }
+
+  const toMin = function (t) { return Number(t.slice(0, 2)) * 60 + Number(t.slice(3, 5)); };
+  const span = (toMin(end) - toMin(start)) / 60;
+
+  if (span <= 0) {
+    el.style.display = 'none';
+    return;
+  }
+
+  el.textContent = '在店 ' + span + ' 小時，扣休息 ' + rest + ' 小時 → 應出勤 ' +
+                   (Math.round((span - rest) * 100) / 100) + ' 小時';
+  el.style.display = '';
+}
+
+['ns-start', 'ns-end', 'ns-rest'].forEach(function (id) {
+  $(id).addEventListener('input', updateShiftPreview);
+});
+
+$('ns-submit').addEventListener('click', async function () {
+  const btn = this;
+  btn.disabled = true; btn.textContent = '建立中…';
+  showMsg('ns-msg', '');
+
+  try {
+    await api('createShiftType', {
+      params: {
+        名稱: $('ns-name').value.trim(),
+        適用店: $('ns-scope').value,
+        上班時間: $('ns-start').value,
+        下班時間: $('ns-end').value,
+        休息時數: $('ns-rest').value,
+        遲到寬限: $('ns-grace').value,
+      },
+    });
+
+    closeModal('modal-shift');
+    toast('班別已建立');
+    loadShifts();
+
+  } catch (err) {
+    showMsg('ns-msg', esc(err.message));
+  } finally {
+    btn.disabled = false; btn.textContent = '建立';
+  }
+});
+
+// ── 常態班 ────────────────────────────────────────────
+async function loadPatterns() {
+  const table = $('pattern-table');
+  const store = $('pattern-store').value;
+
+  table.innerHTML = '<tbody><tr><td class="empty">載入中…</td></tr></tbody>';
+
+  try {
+    const data = await api('getDefaultShifts', { storeCode: store || null });
+
+    if (!data.員工.length) {
+      table.innerHTML = '<tbody><tr><td class="empty">沒有在職員工</td></tr></tbody>';
+      return;
+    }
+
+    const options = function (selected) {
+      return '<option value="">休</option>' + shiftTypes.map(function (s) {
+        return '<option value="' + esc(s.班別代碼) + '"' +
+               (s.班別代碼 === selected ? ' selected' : '') + '>' + esc(s.名稱) + '</option>';
+      }).join('');
+    };
+
+    table.innerHTML =
+      '<thead><tr><th>姓名</th><th>店</th>' +
+      ['一', '二', '三', '四', '五', '六', '日'].map(function (d) {
+        return '<th>週' + d + '</th>';
+      }).join('') + '</tr></thead><tbody>' +
+      data.員工.map(function (e) {
+        const pattern = data.常態班[e.員工編號] || {};
+        let row = '<tr><td>' + esc(e.姓名) + '</td><td>' + esc(storeName(e.所屬店)) + '</td>';
+        for (let d = 1; d <= 7; d++) {
+          const current = pattern[String(d)] ? pattern[String(d)].班別代碼 : '';
+          row += '<td><select data-emp="' + esc(e.員工編號) + '" data-weekday="' + d + '">' +
+                 options(current) + '</select></td>';
+        }
+        return row + '</tr>';
+      }).join('') + '</tbody>';
+
+  } catch (err) {
+    table.innerHTML = '<tbody><tr><td class="empty">' + esc(err.message) + '</td></tr></tbody>';
+  }
+}
+
+$('pattern-reload').addEventListener('click', loadPatterns);
+$('pattern-store').addEventListener('change', loadPatterns);
+
+$('pattern-table').addEventListener('change', async function (e) {
+  const sel = e.target.closest('select');
+  if (!sel) return;
+
+  sel.disabled = true;
+  try {
+    await api('setDefaultShift', {
+      employeeId: sel.dataset.emp,
+      weekday: sel.dataset.weekday,
+      shiftCode: sel.value,
+    });
+    toast('常態班已更新');
+  } catch (err) {
+    alert(err.message);
+    loadPatterns();
+  } finally {
+    sel.disabled = false;
+  }
+});
 
 // ── 場館 ─────────────────────────────────────────────
 async function loadVenues() {
