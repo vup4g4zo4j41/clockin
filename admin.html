@@ -848,22 +848,41 @@ function fillStoreSelects() {
 }
 
 // ── 分頁切換 ──────────────────────────────────────────
+//
+// 每次呼叫後端要等一到三秒（偶爾更久），所以切回看過的分頁時不重抓，
+// 直接顯示畫面上已經有的資料。要最新的就按該頁的「重新整理」。
+// 任何寫入操作後會清掉這個記錄，避免看到過期的數字。
+
+const lastLoaded = {};
+const VIEW_TTL = 90 * 1000;
+
+function invalidateViews() {
+  Object.keys(lastLoaded).forEach(function (k) { delete lastLoaded[k]; });
+}
+
 $('nav').addEventListener('click', function (e) {
   const btn = e.target.closest('button');
   if (!btn) return;
+
+  const view = btn.dataset.view;
 
   document.querySelectorAll('#nav button').forEach(function (b) {
     b.classList.toggle('active', b === btn);
   });
   document.querySelectorAll('.view').forEach(function (v) {
-    v.classList.toggle('active', v.id === 'view-' + btn.dataset.view);
+    v.classList.toggle('active', v.id === 'view-' + view);
   });
 
   const loaders = {
     daily: loadDaily, monthly: loadMonthly, schedule: loadSchedule,
     shifts: loadShifts, employees: loadEmployees, venues: loadVenues, audit: loadAudit,
   };
-  if (loaders[btn.dataset.view]) loaders[btn.dataset.view]();
+
+  if (!loaders[view]) return;
+  if (Date.now() - (lastLoaded[view] || 0) < VIEW_TTL) return;
+
+  lastLoaded[view] = Date.now();
+  loaders[view]();
 });
 
 // ── 今日出勤 ──────────────────────────────────────────
@@ -1203,6 +1222,7 @@ document.addEventListener('click', function (e) {
 
   api('setScheduleCell', { employeeId: emp, date: date, shiftCode: btn.dataset.code })
     .then(function () {
+      invalidateViews();
       toast('已更新 ' + date);
       loadSchedule();
     })
@@ -1536,6 +1556,7 @@ $('imp-submit').addEventListener('click', async function () {
     });
 
     closeModal('modal-import');
+    invalidateViews();
     toast('匯入完成：新增 ' + result.新增 + '、更新 ' + result.更新 + ' 筆');
 
     if (result.錯誤 && result.錯誤.length) {
@@ -1667,6 +1688,7 @@ $('ns-submit').addEventListener('click', async function () {
     });
 
     closeModal('modal-shift');
+    invalidateViews();
     toast('班別已建立');
     loadShifts();
 
@@ -1734,6 +1756,7 @@ $('pattern-table').addEventListener('change', async function (e) {
       weekday: sel.dataset.weekday,
       shiftCode: sel.value,
     });
+    invalidateViews();
     toast('常態班已更新');
   } catch (err) {
     alert(err.message);
@@ -1874,11 +1897,13 @@ $('emp-table').addEventListener('click', async function (e) {
       const reason = prompt('停用 ' + btn.dataset.name + ' 的原因？（例如：2026-08-31 離職）');
       if (reason === null) return;
       await api('disableEmployee', { employeeId: btn.dataset.disable, reason: reason });
+      invalidateViews();
       toast('已停用');
       loadEmployees();
     }
     if (btn.dataset.enable) {
       await api('enableEmployee', { employeeId: btn.dataset.enable });
+      invalidateViews();
       toast('已復職');
       loadEmployees();
     }
@@ -1950,6 +1975,7 @@ $('np-submit').addEventListener('click', async function () {
     });
 
     closeModal('modal-punch');
+    invalidateViews();
     toast(result.員工 + ' ' + result.日期 + ' ' + result.時間 + ' ' + result.類型 + '已補登');
     loadDaily();
 
@@ -1973,6 +1999,7 @@ $('ed-submit').addEventListener('click', async function () {
       reason: $('ed-reason').value.trim(),
     });
     closeModal('modal-edit');
+    invalidateViews();
     toast('時間已修改');
     loadDaily();
   } catch (err) {
@@ -1994,6 +2021,7 @@ $('ed-void').addEventListener('click', async function () {
       reason: $('ed-reason').value.trim() || '主管作廢',
     });
     closeModal('modal-edit');
+    invalidateViews();
     toast('已作廢');
     loadDaily();
   } catch (err) {
@@ -2018,6 +2046,7 @@ $('venue-table').addEventListener('click', async function (e) {
 
   try {
     await api('setVenueLocation', { storeCode: btn.dataset.radius, radius: Number(input) });
+    invalidateViews();
     toast('半徑已更新');
     loadVenues();
   } catch (err) {
