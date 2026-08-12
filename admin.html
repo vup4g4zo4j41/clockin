@@ -1,0 +1,1077 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>打卡系統後台</title>
+<style>
+  :root {
+    --ground:   #F4F7F9;
+    --surface:  #FFFFFF;
+    --surface-2:#EDF2F5;
+    --ink:      #16202A;
+    --ink-2:    #5A6B77;
+    --muted:    #8A9AA6;
+    --rule:     #DDE4E9;
+    --accent:   #1F5E6B;
+    --accent-d: #164851;
+    --accent-soft:#E1EDEF;
+    --ok:       #2E7D5B;
+    --ok-soft:  #E4F1EA;
+    --warn:     #B87A1E;
+    --warn-soft:#F8EFDE;
+    --crit:     #B3453A;
+    --crit-soft:#F8E6E4;
+    --sans: system-ui, -apple-system, "PingFang TC", "Microsoft JhengHei", sans-serif;
+    --mono: ui-monospace, "SF Mono", Menlo, monospace;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ground:   #10171C;
+      --surface:  #172129;
+      --surface-2:#1D2932;
+      --ink:      #E6EDF2;
+      --ink-2:    #A0B0BC;
+      --muted:    #7A8B98;
+      --rule:     #26343E;
+      --accent:   #6FBCCB;
+      --accent-d: #8ACEDB;
+      --accent-soft:#16303A;
+      --ok:       #5FBF92;
+      --ok-soft:  #14312A;
+      --warn:     #E0A64A;
+      --warn-soft:#33280F;
+      --crit:     #E07A6E;
+      --crit-soft:#351E1C;
+    }
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 15px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ── 登入 ── */
+  #login {
+    min-height: 100vh;
+    display: flex; align-items: center; justify-content: center;
+    padding: 1.5rem;
+  }
+  .login-box {
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-radius: 14px;
+    padding: 2rem;
+    width: 100%; max-width: 380px;
+    display: flex; flex-direction: column; gap: 1.1rem;
+  }
+  .login-box h1 { font-size: 1.4rem; font-weight: 700; }
+  .login-box .sub { font-size: 0.88rem; color: var(--ink-2); margin-top: -0.6rem; }
+
+  /* ── 頁首 ── */
+  header {
+    background: var(--surface);
+    border-bottom: 1px solid var(--rule);
+    position: sticky; top: 0; z-index: 10;
+  }
+  .head-top {
+    max-width: 1240px; margin: 0 auto;
+    padding: 0.85rem 1.25rem;
+    display: flex; align-items: center; gap: 1rem;
+  }
+  .brand { font-weight: 700; font-size: 1.05rem; }
+  .who { margin-left: auto; font-size: 0.88rem; color: var(--ink-2); display: flex; align-items: center; gap: 0.75rem; }
+  .role-tag {
+    font-size: 0.72rem; padding: 0.1rem 0.5rem; border-radius: 4px;
+    background: var(--accent-soft); color: var(--accent);
+  }
+
+  nav {
+    max-width: 1240px; margin: 0 auto;
+    padding: 0 1.25rem;
+    display: flex; gap: 0.25rem; overflow-x: auto;
+  }
+  nav button {
+    background: none; border: none; font-family: inherit; font-size: 0.92rem;
+    color: var(--ink-2); padding: 0.7rem 0.9rem; cursor: pointer;
+    border-bottom: 2px solid transparent; white-space: nowrap; font-weight: 600;
+  }
+  nav button:hover { color: var(--ink); }
+  nav button.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+  main { max-width: 1240px; margin: 0 auto; padding: 1.5rem 1.25rem 4rem; }
+  .view { display: none; flex-direction: column; gap: 1.25rem; }
+  .view.active { display: flex; }
+
+  /* ── 工具列 ── */
+  .toolbar {
+    display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: center;
+  }
+  .toolbar .spacer { margin-left: auto; }
+
+  select, input[type=text], input[type=password], input[type=date], input[type=month], input[type=time] {
+    font-family: inherit; font-size: 0.92rem;
+    padding: 0.55rem 0.7rem;
+    border: 1px solid var(--rule); border-radius: 8px;
+    background: var(--surface); color: var(--ink);
+  }
+  select:focus, input:focus { outline: 2px solid var(--accent); border-color: transparent; }
+
+  .btn {
+    font-family: inherit; font-size: 0.92rem; font-weight: 600;
+    padding: 0.55rem 1rem;
+    border: 1px solid var(--rule); border-radius: 8px;
+    background: var(--surface); color: var(--ink); cursor: pointer;
+  }
+  .btn:hover { background: var(--surface-2); }
+  .btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .btn.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .btn.primary:hover { background: var(--accent-d); }
+  .btn.sm { padding: 0.3rem 0.6rem; font-size: 0.82rem; }
+  .btn.danger { color: var(--crit); }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  @media (prefers-color-scheme: dark) { .btn.primary { color: #0C1418; } }
+
+  /* ── 統計卡 ── */
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 1px;
+           background: var(--rule); border: 1px solid var(--rule); border-radius: 10px; overflow: hidden; }
+  .stat { background: var(--surface); padding: 0.9rem 1.1rem; }
+  .stat .k { font-size: 0.75rem; color: var(--muted); }
+  .stat .v { font-size: 1.6rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .stat .v.warn { color: var(--warn); }
+  .stat .v.crit { color: var(--crit); }
+
+  /* ── 表格 ── */
+  .panel { background: var(--surface); border: 1px solid var(--rule); border-radius: 10px; overflow: hidden; }
+  .panel-head { padding: 0.85rem 1.1rem; border-bottom: 1px solid var(--rule);
+                display: flex; align-items: center; gap: 0.75rem; }
+  .panel-head h2 { font-size: 0.95rem; font-weight: 700; }
+  .panel-head .count { font-size: 0.82rem; color: var(--muted); }
+  .scroll { overflow-x: auto; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+  thead th {
+    text-align: left; font-size: 0.72rem; letter-spacing: 0.06em;
+    color: var(--muted); font-weight: 600; padding: 0.6rem 0.85rem;
+    border-bottom: 1px solid var(--rule); white-space: nowrap;
+    background: var(--surface);
+  }
+  tbody td { padding: 0.6rem 0.85rem; border-bottom: 1px solid var(--rule); vertical-align: middle; }
+  tbody tr:last-child td { border-bottom: none; }
+  tbody tr:hover { background: var(--surface-2); }
+  td.num, th.num { font-variant-numeric: tabular-nums; }
+  td.mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+  td.actions { white-space: nowrap; text-align: right; }
+  td.actions .btn { margin-left: 0.3rem; }
+
+  .tag { display: inline-block; padding: 0.12rem 0.5rem; border-radius: 4px;
+         font-size: 0.75rem; font-weight: 600; white-space: nowrap; }
+  .tag.ok   { background: var(--ok-soft);   color: var(--ok); }
+  .tag.warn { background: var(--warn-soft); color: var(--warn); }
+  .tag.crit { background: var(--crit-soft); color: var(--crit); }
+  .tag.info { background: var(--accent-soft); color: var(--accent); }
+  .tag.mute { background: var(--surface-2); color: var(--muted); }
+
+  .empty { padding: 2.5rem 1rem; text-align: center; color: var(--muted); font-size: 0.9rem; }
+
+  /* ── 對話框 ── */
+  .overlay {
+    position: fixed; inset: 0; background: rgba(10,20,26,0.55);
+    display: none; align-items: center; justify-content: center; padding: 1.25rem; z-index: 50;
+  }
+  .overlay.show { display: flex; }
+  .modal {
+    background: var(--surface); border-radius: 14px; padding: 1.5rem;
+    width: 100%; max-width: 460px; max-height: 90vh; overflow-y: auto;
+    display: flex; flex-direction: column; gap: 1rem;
+  }
+  .modal h2 { font-size: 1.1rem; font-weight: 700; }
+  .field { display: flex; flex-direction: column; gap: 0.3rem; }
+  .field label { font-size: 0.82rem; font-weight: 600; color: var(--ink-2); }
+  .field .hint { font-size: 0.78rem; color: var(--muted); }
+  .field input, .field select { width: 100%; }
+  .modal-actions { display: flex; gap: 0.6rem; justify-content: flex-end; margin-top: 0.3rem; }
+
+  .invite-result {
+    background: var(--accent-soft); border-radius: 8px; padding: 0.9rem;
+    display: flex; flex-direction: column; gap: 0.5rem;
+  }
+  .invite-result .url {
+    font-family: var(--mono); font-size: 0.78rem; word-break: break-all;
+    background: var(--surface); padding: 0.6rem; border-radius: 6px;
+  }
+
+  .msg { padding: 0.7rem 0.9rem; border-radius: 8px; font-size: 0.88rem; }
+  .msg.err { background: var(--crit-soft); color: var(--crit); }
+  .msg.ok  { background: var(--ok-soft);  color: var(--ok); }
+
+  #toast {
+    position: fixed; bottom: 1.5rem; left: 50%; transform: translateX(-50%);
+    background: var(--ink); color: var(--ground);
+    padding: 0.7rem 1.2rem; border-radius: 8px; font-size: 0.9rem;
+    opacity: 0; pointer-events: none; transition: opacity 0.2s; z-index: 100;
+  }
+  #toast.show { opacity: 1; }
+
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+
+<!-- 登入 -->
+<div id="login">
+  <form class="login-box" id="login-form">
+    <h1>打卡系統後台</h1>
+    <p class="sub">城市健身股份有限公司</p>
+    <div class="field">
+      <label for="acc">帳號</label>
+      <input type="text" id="acc" autocomplete="username" autocapitalize="none" required>
+    </div>
+    <div class="field">
+      <label for="pwd">密碼</label>
+      <input type="password" id="pwd" autocomplete="current-password" required>
+    </div>
+    <div id="login-msg"></div>
+    <button type="submit" class="btn primary" id="login-btn">登入</button>
+  </form>
+</div>
+
+<!-- 主畫面 -->
+<div id="app" class="hidden">
+  <header>
+    <div class="head-top">
+      <span class="brand">打卡系統後台</span>
+      <span class="who">
+        <span id="who-name">—</span>
+        <span class="role-tag" id="who-role">—</span>
+        <button class="btn sm" id="logout">登出</button>
+      </span>
+    </div>
+    <nav id="nav">
+      <button data-view="daily" class="active">今日出勤</button>
+      <button data-view="monthly">月統計</button>
+      <button data-view="employees">員工</button>
+      <button data-view="venues">場館</button>
+      <button data-view="audit" id="nav-audit">異動紀錄</button>
+    </nav>
+  </header>
+
+  <main>
+    <!-- 今日出勤 -->
+    <section class="view active" id="view-daily">
+      <div class="toolbar">
+        <select id="daily-store"></select>
+        <input type="date" id="daily-date">
+        <button class="btn" id="daily-reload">重新整理</button>
+        <span class="spacer"></span>
+        <button class="btn primary" id="btn-add-punch">補登打卡</button>
+      </div>
+
+      <div class="stats" id="daily-stats"></div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <h2>出勤明細</h2>
+          <span class="count" id="daily-count"></span>
+        </div>
+        <div class="scroll"><table id="daily-table"></table></div>
+      </div>
+    </section>
+
+    <!-- 月統計 -->
+    <section class="view" id="view-monthly">
+      <div class="toolbar">
+        <select id="monthly-store"></select>
+        <input type="month" id="monthly-month">
+        <button class="btn" id="monthly-reload">查詢</button>
+        <span class="spacer"></span>
+        <button class="btn" id="btn-export">匯出 CSV</button>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <h2>月度時數統計</h2>
+          <span class="count" id="monthly-count"></span>
+        </div>
+        <div class="scroll"><table id="monthly-table"></table></div>
+      </div>
+    </section>
+
+    <!-- 員工 -->
+    <section class="view" id="view-employees">
+      <div class="toolbar">
+        <select id="emp-store"></select>
+        <button class="btn" id="emp-reload">重新整理</button>
+        <span class="spacer"></span>
+        <button class="btn primary" id="btn-add-employee">新增員工</button>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <h2>員工名單</h2>
+          <span class="count" id="emp-count"></span>
+        </div>
+        <div class="scroll"><table id="emp-table"></table></div>
+      </div>
+    </section>
+
+    <!-- 場館 -->
+    <section class="view" id="view-venues">
+      <div class="panel">
+        <div class="panel-head">
+          <h2>場館與打卡範圍</h2>
+          <span class="count">座標請用手機在店裡設定</span>
+        </div>
+        <div class="scroll"><table id="venue-table"></table></div>
+      </div>
+    </section>
+
+    <!-- 異動紀錄 -->
+    <section class="view" id="view-audit">
+      <div class="panel">
+        <div class="panel-head">
+          <h2>異動紀錄</h2>
+          <span class="count">最近 100 筆</span>
+        </div>
+        <div class="scroll"><table id="audit-table"></table></div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<!-- 新增員工 -->
+<div class="overlay" id="modal-employee">
+  <div class="modal">
+    <h2>新增員工</h2>
+    <div class="field">
+      <label for="ne-name">姓名</label>
+      <input type="text" id="ne-name" placeholder="王小明">
+    </div>
+    <div class="field">
+      <label for="ne-store">所屬店</label>
+      <select id="ne-store"></select>
+    </div>
+    <div class="field">
+      <label for="ne-role">身分</label>
+      <select id="ne-role">
+        <option value="員工">員工</option>
+        <option value="店長">店長</option>
+        <option value="最高權限">最高權限</option>
+      </select>
+    </div>
+    <div class="field">
+      <label for="ne-hire">到職日</label>
+      <input type="date" id="ne-hire">
+      <span class="hint">特休年資以此計算，必填</span>
+    </div>
+    <div id="ne-msg"></div>
+    <div id="ne-result" class="hidden"></div>
+    <div class="modal-actions">
+      <button class="btn" data-close>關閉</button>
+      <button class="btn primary" id="ne-submit">建立並產生連結</button>
+    </div>
+  </div>
+</div>
+
+<!-- 補登打卡 -->
+<div class="overlay" id="modal-punch">
+  <div class="modal">
+    <h2 id="punch-modal-title">補登打卡</h2>
+    <div class="field">
+      <label for="np-employee">員工</label>
+      <select id="np-employee"></select>
+    </div>
+    <div class="field">
+      <label for="np-date">日期</label>
+      <input type="date" id="np-date">
+    </div>
+    <div class="field">
+      <label for="np-type">類型</label>
+      <select id="np-type">
+        <option value="上班">上班</option>
+        <option value="下班">下班</option>
+      </select>
+    </div>
+    <div class="field">
+      <label for="np-time">時間</label>
+      <input type="time" id="np-time">
+    </div>
+    <div class="field">
+      <label for="np-reason">原因</label>
+      <input type="text" id="np-reason" placeholder="例如：忘記打下班卡，口頭回報 18:10 離開">
+      <span class="hint">會寫入異動紀錄，建議填清楚</span>
+    </div>
+    <div id="np-msg"></div>
+    <div class="modal-actions">
+      <button class="btn" data-close>取消</button>
+      <button class="btn primary" id="np-submit">確認補登</button>
+    </div>
+  </div>
+</div>
+
+<!-- 修改時間 -->
+<div class="overlay" id="modal-edit">
+  <div class="modal">
+    <h2>修改打卡時間</h2>
+    <p class="hint" id="edit-info" style="font-size:0.88rem;color:var(--ink-2)"></p>
+    <div class="field">
+      <label for="ed-time">新的時間</label>
+      <input type="time" id="ed-time">
+    </div>
+    <div class="field">
+      <label for="ed-reason">原因</label>
+      <input type="text" id="ed-reason" placeholder="修改原因">
+    </div>
+    <div id="ed-msg"></div>
+    <div class="modal-actions">
+      <button class="btn" data-close>取消</button>
+      <button class="btn danger" id="ed-void">作廢這筆</button>
+      <button class="btn primary" id="ed-submit">儲存</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+const API_URL = 'https://script.google.com/macros/s/AKfycbwb1lzu9hqiFy_XO29ImhIqK7uBHRyHGC_Ol5B2URYPUpX7COcWyAPwWcWMJkbzUflM/exec';
+
+let session = null;   // { token, employee }
+let venues = [];
+let employees = [];
+
+// ── API ──────────────────────────────────────────────
+async function api(action, params) {
+  const body = Object.assign({ action: action }, params || {});
+  if (session && session.token) body.sessionToken = session.token;
+
+  const res = await fetch(API_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+    body: JSON.stringify(body),
+    redirect: 'follow',
+  });
+
+  if (!res.ok) throw new Error('連線失敗（' + res.status + '）');
+
+  const json = await res.json();
+  if (!json.ok) {
+    const err = new Error(json.error || '未知錯誤');
+    if (/請先登入|重新登入|逾時/.test(err.message)) logout();
+    throw err;
+  }
+  return json.data;
+}
+
+// ── 工具 ─────────────────────────────────────────────
+const $ = function (id) { return document.getElementById(id); };
+
+function toast(text) {
+  const el = $('toast');
+  el.textContent = text;
+  el.classList.add('show');
+  setTimeout(function () { el.classList.remove('show'); }, 2600);
+}
+
+function showMsg(id, text, type) {
+  const el = $(id);
+  el.innerHTML = text ? '<div class="msg ' + (type || 'err') + '">' + text + '</div>' : '';
+}
+
+function todayStr() {
+  const d = new Date();
+  return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2);
+}
+
+function monthStr() { return todayStr().slice(0, 7); }
+
+function esc(s) {
+  return String(s === null || s === undefined ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function verdictTag(v) {
+  if (!v) return '';
+  const map = { '準時': 'ok', '遲到': 'warn', '早退': 'warn', '未排班出勤': 'info', '請假': 'info' };
+  return v.split('、').map(function (x) {
+    return '<span class="tag ' + (map[x] || 'mute') + '">' + esc(x) + '</span>';
+  }).join(' ');
+}
+
+function statusTag(s) {
+  const map = { '已完成': 'ok', '上班中': 'info', '未出勤': 'crit', '休假': 'mute' };
+  return '<span class="tag ' + (map[s] || 'mute') + '">' + esc(s) + '</span>';
+}
+
+// ── 登入 ─────────────────────────────────────────────
+$('login-form').addEventListener('submit', async function (e) {
+  e.preventDefault();
+  const btn = $('login-btn');
+  btn.disabled = true; btn.textContent = '登入中…';
+  showMsg('login-msg', '');
+
+  try {
+    session = await api('loginAdmin', { account: $('acc').value.trim(), password: $('pwd').value });
+    localStorage.setItem('clockin_session', JSON.stringify(session));
+    await enterApp();
+  } catch (err) {
+    showMsg('login-msg', esc(err.message));
+    btn.disabled = false; btn.textContent = '登入';
+  }
+});
+
+function logout() {
+  session = null;
+  localStorage.removeItem('clockin_session');
+  $('app').classList.add('hidden');
+  $('login').style.display = 'flex';
+  $('login-btn').disabled = false;
+  $('login-btn').textContent = '登入';
+  $('pwd').value = '';
+}
+
+$('logout').addEventListener('click', logout);
+
+async function enterApp() {
+  $('login').style.display = 'none';
+  $('app').classList.remove('hidden');
+  $('who-name').textContent = session.employee.姓名;
+  $('who-role').textContent = session.employee.角色;
+
+  if (session.employee.角色 !== '最高權限') {
+    $('nav-audit').classList.add('hidden');
+  }
+
+  venues = await api('listVenues');
+  fillStoreSelects();
+
+  $('daily-date').value = todayStr();
+  $('monthly-month').value = monthStr();
+
+  await loadDaily();
+}
+
+function fillStoreSelects() {
+  const opts = venues.map(function (v) {
+    return '<option value="' + esc(v.店代碼) + '">' + esc(v.店名) + '</option>';
+  }).join('');
+
+  const all = '<option value="">全部分店</option>';
+  $('daily-store').innerHTML = all + opts;
+  $('monthly-store').innerHTML = all + opts;
+  $('emp-store').innerHTML = all + opts;
+  $('ne-store').innerHTML = opts;
+}
+
+// ── 分頁切換 ──────────────────────────────────────────
+$('nav').addEventListener('click', function (e) {
+  const btn = e.target.closest('button');
+  if (!btn) return;
+
+  document.querySelectorAll('#nav button').forEach(function (b) {
+    b.classList.toggle('active', b === btn);
+  });
+  document.querySelectorAll('.view').forEach(function (v) {
+    v.classList.toggle('active', v.id === 'view-' + btn.dataset.view);
+  });
+
+  const loaders = {
+    daily: loadDaily, monthly: loadMonthly,
+    employees: loadEmployees, venues: loadVenues, audit: loadAudit,
+  };
+  if (loaders[btn.dataset.view]) loaders[btn.dataset.view]();
+});
+
+// ── 今日出勤 ──────────────────────────────────────────
+async function loadDaily() {
+  const table = $('daily-table');
+  table.innerHTML = '<tbody><tr><td class="empty">載入中…</td></tr></tbody>';
+
+  try {
+    const data = await api('getDailyDetail', {
+      storeCode: $('daily-store').value || null,
+      date: $('daily-date').value,
+    });
+
+    $('daily-stats').innerHTML =
+      stat('應到人數', data.人數) +
+      stat('已完成', data.已完成, 'ok') +
+      stat('上班中', data.上班中) +
+      stat('未出勤', data.未出勤, data.未出勤 > 0 ? 'crit' : '');
+
+    $('daily-count').textContent = data.日期 + ' · ' + data.明細.length + ' 人';
+
+    if (!data.明細.length) {
+      table.innerHTML = '<tbody><tr><td class="empty">這天沒有在職員工資料</td></tr></tbody>';
+      return;
+    }
+
+    table.innerHTML =
+      '<thead><tr><th>姓名</th><th>店</th><th>班表</th><th>上班</th><th>下班</th>' +
+      '<th class="num">時數</th><th>狀態</th><th>判定</th><th>來源</th><th></th></tr></thead><tbody>' +
+      data.明細.map(function (r) {
+        const suspicious = r.可疑 ? ' <span class="tag warn" title="' + esc(r.可疑) + '">可疑</span>' : '';
+        return '<tr>' +
+          '<td>' + esc(r.姓名) + '</td>' +
+          '<td>' + esc(storeName(r.店代碼)) + '</td>' +
+          '<td class="mono">' + esc(r.班表) + '</td>' +
+          '<td class="mono">' + esc(r.上班) +
+            (r.上班紀錄ID ? ' <button class="btn sm" data-edit="' + esc(r.上班紀錄ID) +
+              '" data-label="' + esc(r.姓名 + ' 上班 ' + r.上班) + '">改</button>' : '') + '</td>' +
+          '<td class="mono">' + esc(r.下班) +
+            (r.下班紀錄ID ? ' <button class="btn sm" data-edit="' + esc(r.下班紀錄ID) +
+              '" data-label="' + esc(r.姓名 + ' 下班 ' + r.下班) + '">改</button>' : '') + '</td>' +
+          '<td class="num">' + (r.時數 || '') + '</td>' +
+          '<td>' + statusTag(r.狀態) + '</td>' +
+          '<td>' + verdictTag(r.判定) + suspicious + '</td>' +
+          '<td><span class="tag mute">' + esc(r.來源 || '') + '</span></td>' +
+          '<td class="actions"><button class="btn sm" data-punch="' + esc(r.員工編號) +
+            '" data-name="' + esc(r.姓名) + '">補登</button></td>' +
+          '</tr>';
+      }).join('') + '</tbody>';
+
+  } catch (err) {
+    table.innerHTML = '<tbody><tr><td class="empty">' + esc(err.message) + '</td></tr></tbody>';
+  }
+}
+
+function stat(label, value, tone) {
+  return '<div class="stat"><div class="k">' + label + '</div>' +
+         '<div class="v ' + (tone || '') + '">' + value + '</div></div>';
+}
+
+function storeName(code) {
+  const v = venues.filter(function (x) { return x.店代碼 === code; })[0];
+  return v ? v.店名 : code;
+}
+
+$('daily-reload').addEventListener('click', loadDaily);
+$('daily-store').addEventListener('change', loadDaily);
+$('daily-date').addEventListener('change', loadDaily);
+
+// ── 月統計 ────────────────────────────────────────────
+let monthlyData = null;
+
+async function loadMonthly() {
+  const table = $('monthly-table');
+  table.innerHTML = '<tbody><tr><td class="empty">載入中…</td></tr></tbody>';
+
+  try {
+    monthlyData = await api('getMonthlySummary', {
+      storeCode: $('monthly-store').value || null,
+      month: $('monthly-month').value,
+    });
+
+    $('monthly-count').textContent = monthlyData.月份 + ' · ' + monthlyData.明細.length + ' 人';
+
+    if (!monthlyData.明細.length) {
+      table.innerHTML = '<tbody><tr><td class="empty">這個月份沒有資料</td></tr></tbody>';
+      return;
+    }
+
+    table.innerHTML =
+      '<thead><tr><th>姓名</th><th>店</th><th class="num">出勤天數</th><th class="num">總時數</th>' +
+      '<th class="num">遲到</th><th class="num">早退</th><th class="num">缺卡</th>' +
+      '<th class="num">請假時數</th><th>狀態</th></tr></thead><tbody>' +
+      monthlyData.明細.map(function (r) {
+        return '<tr>' +
+          '<td>' + esc(r.姓名) + '</td>' +
+          '<td>' + esc(storeName(r.店代碼)) + '</td>' +
+          '<td class="num">' + r.出勤天數 + '</td>' +
+          '<td class="num">' + r.總時數 + '</td>' +
+          '<td class="num">' + (r.遲到次數 ? '<span class="tag warn">' + r.遲到次數 + '</span>' : '0') + '</td>' +
+          '<td class="num">' + (r.早退次數 ? '<span class="tag warn">' + r.早退次數 + '</span>' : '0') + '</td>' +
+          '<td class="num">' + (r.缺卡天數 ? '<span class="tag crit">' + r.缺卡天數 + '</span>' : '0') + '</td>' +
+          '<td class="num">' + r.請假時數 + '</td>' +
+          '<td>' + (r.狀態 === '在職' ? '' : '<span class="tag mute">' + esc(r.狀態) + '</span>') + '</td>' +
+          '</tr>';
+      }).join('') + '</tbody>';
+
+  } catch (err) {
+    table.innerHTML = '<tbody><tr><td class="empty">' + esc(err.message) + '</td></tr></tbody>';
+  }
+}
+
+$('monthly-reload').addEventListener('click', loadMonthly);
+
+$('btn-export').addEventListener('click', function () {
+  if (!monthlyData || !monthlyData.明細.length) { toast('沒有資料可以匯出'); return; }
+
+  const headers = ['員工編號', '姓名', '店', '出勤天數', '總時數', '遲到次數', '早退次數', '缺卡天數', '請假時數'];
+  const rows = monthlyData.明細.map(function (r) {
+    return [r.員工編號, r.姓名, storeName(r.店代碼), r.出勤天數, r.總時數,
+            r.遲到次數, r.早退次數, r.缺卡天數, r.請假時數];
+  });
+
+  const csv = [headers].concat(rows).map(function (row) {
+    return row.map(function (c) { return '"' + String(c).replace(/"/g, '""') + '"'; }).join(',');
+  }).join('\n');
+
+  // BOM 讓 Excel 正確辨識中文
+  const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = '出勤時數_' + monthlyData.月份 + '.csv';
+  a.click();
+  URL.revokeObjectURL(a.href);
+  toast('已下載');
+});
+
+// ── 員工 ─────────────────────────────────────────────
+async function loadEmployees() {
+  const table = $('emp-table');
+  table.innerHTML = '<tbody><tr><td class="empty">載入中…</td></tr></tbody>';
+
+  try {
+    employees = await api('listEmployees', { storeCode: $('emp-store').value || null });
+    $('emp-count').textContent = employees.length + ' 人';
+
+    if (!employees.length) {
+      table.innerHTML = '<tbody><tr><td class="empty">還沒有員工</td></tr></tbody>';
+      return;
+    }
+
+    table.innerHTML =
+      '<thead><tr><th>編號</th><th>姓名</th><th>店</th><th>身分</th><th>到職日</th>' +
+      '<th>狀態</th><th></th></tr></thead><tbody>' +
+      employees.map(function (e) {
+        const statusMap = { '在職': 'ok', '待註冊': 'warn', '停用': 'mute' };
+        const isOwner = session.employee.角色 === '最高權限';
+
+        let actions = '';
+        if (isOwner) {
+          if (e.狀態 === '待註冊') {
+            actions += '<button class="btn sm" data-reissue="' + esc(e.員工編號) + '">重發連結</button>';
+          }
+          if (e.狀態 === '停用') {
+            actions += '<button class="btn sm" data-enable="' + esc(e.員工編號) + '">復職</button>';
+          } else {
+            actions += '<button class="btn sm danger" data-disable="' + esc(e.員工編號) +
+                       '" data-name="' + esc(e.姓名) + '">停用</button>';
+          }
+        }
+
+        return '<tr>' +
+          '<td class="mono">' + esc(e.員工編號) + '</td>' +
+          '<td>' + esc(e.姓名) + '</td>' +
+          '<td>' + esc(storeName(e.所屬店)) + '</td>' +
+          '<td>' + esc(e.角色) + '</td>' +
+          '<td class="mono">' + esc(e.到職日) + '</td>' +
+          '<td><span class="tag ' + (statusMap[e.狀態] || 'mute') + '">' + esc(e.狀態) + '</span>' +
+            (e.已綁定LINE ? '' : ' <span class="tag mute">未綁定</span>') + '</td>' +
+          '<td class="actions">' + actions + '</td>' +
+          '</tr>';
+      }).join('') + '</tbody>';
+
+  } catch (err) {
+    table.innerHTML = '<tbody><tr><td class="empty">' + esc(err.message) + '</td></tr></tbody>';
+  }
+}
+
+$('emp-reload').addEventListener('click', loadEmployees);
+$('emp-store').addEventListener('change', loadEmployees);
+
+// ── 場館 ─────────────────────────────────────────────
+async function loadVenues() {
+  const table = $('venue-table');
+  try {
+    venues = await api('listVenues');
+    table.innerHTML =
+      '<thead><tr><th>代碼</th><th>店名</th><th>登記公司</th><th>座標</th>' +
+      '<th class="num">半徑</th><th>狀態</th><th></th></tr></thead><tbody>' +
+      venues.map(function (v) {
+        return '<tr>' +
+          '<td class="mono">' + esc(v.店代碼) + '</td>' +
+          '<td>' + esc(v.店名) + '</td>' +
+          '<td>' + esc(v.登記公司 || '') + '</td>' +
+          '<td class="mono">' + (v.已設定座標
+            ? esc(v.緯度.toFixed(5) + ', ' + v.經度.toFixed(5))
+            : '<span class="tag crit">尚未設定</span>') + '</td>' +
+          '<td class="num">' + (v.允許半徑 || '') + ' m</td>' +
+          '<td>' + esc(v.狀態 || '') + '</td>' +
+          '<td class="actions"><button class="btn sm" data-radius="' + esc(v.店代碼) +
+            '" data-current="' + (v.允許半徑 || 120) + '" data-name="' + esc(v.店名) + '">調整半徑</button></td>' +
+          '</tr>';
+      }).join('') + '</tbody>';
+  } catch (err) {
+    table.innerHTML = '<tbody><tr><td class="empty">' + esc(err.message) + '</td></tr></tbody>';
+  }
+}
+
+// ── 異動紀錄 ──────────────────────────────────────────
+async function loadAudit() {
+  const table = $('audit-table');
+  table.innerHTML = '<tbody><tr><td class="empty">載入中…</td></tr></tbody>';
+
+  try {
+    const logs = await api('getAuditLog', { limit: 100 });
+    if (!logs.length) {
+      table.innerHTML = '<tbody><tr><td class="empty">還沒有異動紀錄</td></tr></tbody>';
+      return;
+    }
+
+    table.innerHTML =
+      '<thead><tr><th>時間</th><th>操作人</th><th>動作</th><th>對象</th>' +
+      '<th>異動前</th><th>異動後</th><th>說明</th></tr></thead><tbody>' +
+      logs.map(function (l) {
+        return '<tr>' +
+          '<td class="mono">' + esc(String(l.時間).slice(0, 16)) + '</td>' +
+          '<td>' + esc(l.操作人) + '</td>' +
+          '<td><span class="tag info">' + esc(l.動作) + '</span></td>' +
+          '<td>' + esc(l.對象) + '</td>' +
+          '<td class="mono">' + esc(l.異動前) + '</td>' +
+          '<td class="mono">' + esc(l.異動後) + '</td>' +
+          '<td>' + esc(l.說明) + '</td>' +
+          '</tr>';
+      }).join('') + '</tbody>';
+  } catch (err) {
+    table.innerHTML = '<tbody><tr><td class="empty">' + esc(err.message) + '</td></tr></tbody>';
+  }
+}
+
+// ── 對話框控制 ────────────────────────────────────────
+function openModal(id) { $(id).classList.add('show'); }
+function closeModal(id) { $(id).classList.remove('show'); }
+
+document.addEventListener('click', function (e) {
+  if (e.target.matches('[data-close]')) {
+    e.target.closest('.overlay').classList.remove('show');
+  }
+  if (e.target.classList.contains('overlay')) {
+    e.target.classList.remove('show');
+  }
+});
+
+// ── 新增員工 ──────────────────────────────────────────
+$('btn-add-employee').addEventListener('click', function () {
+  $('ne-name').value = '';
+  $('ne-hire').value = '';
+  $('ne-result').classList.add('hidden');
+  $('ne-submit').classList.remove('hidden');
+  showMsg('ne-msg', '');
+  openModal('modal-employee');
+});
+
+$('ne-submit').addEventListener('click', async function () {
+  const btn = this;
+  btn.disabled = true; btn.textContent = '建立中…';
+  showMsg('ne-msg', '');
+
+  try {
+    const result = await api('createInvite', {
+      params: {
+        姓名: $('ne-name').value.trim(),
+        店代碼: $('ne-store').value,
+        角色: $('ne-role').value,
+        到職日: $('ne-hire').value,
+      },
+    });
+
+    const url = 'https://liff.line.me/2011083590-EXsGOSUJ?token=' + result.token;
+    $('ne-result').innerHTML =
+      '<div class="invite-result">' +
+      '<strong>' + esc(result.姓名) + '（' + esc(result.員工編號) + '）已建立</strong>' +
+      '<span style="font-size:0.82rem">把下面的連結傳給他，用手機 LINE 開啟即可完成註冊。' +
+      '連結用過失效，' + esc(result.到期時間) + ' 前有效。</span>' +
+      '<div class="url" id="invite-url">' + esc(url) + '</div>' +
+      '<button class="btn" id="copy-invite">複製連結</button>' +
+      '</div>';
+    $('ne-result').classList.remove('hidden');
+    btn.classList.add('hidden');
+
+    $('copy-invite').addEventListener('click', function () {
+      navigator.clipboard.writeText(url).then(function () { toast('已複製'); });
+    });
+
+    loadEmployees();
+
+  } catch (err) {
+    showMsg('ne-msg', esc(err.message));
+  } finally {
+    btn.disabled = false; btn.textContent = '建立並產生連結';
+  }
+});
+
+// ── 員工操作 ──────────────────────────────────────────
+$('emp-table').addEventListener('click', async function (e) {
+  const btn = e.target.closest('button');
+  if (!btn) return;
+
+  try {
+    if (btn.dataset.disable) {
+      const reason = prompt('停用 ' + btn.dataset.name + ' 的原因？（例如：2026-08-31 離職）');
+      if (reason === null) return;
+      await api('disableEmployee', { employeeId: btn.dataset.disable, reason: reason });
+      toast('已停用');
+      loadEmployees();
+    }
+    if (btn.dataset.enable) {
+      await api('enableEmployee', { employeeId: btn.dataset.enable });
+      toast('已復職');
+      loadEmployees();
+    }
+    if (btn.dataset.reissue) {
+      const result = await api('reissueInvite', { employeeId: btn.dataset.reissue });
+      const url = 'https://liff.line.me/2011083590-EXsGOSUJ?token=' + result.token;
+      await navigator.clipboard.writeText(url);
+      toast('新連結已複製到剪貼簿');
+    }
+  } catch (err) {
+    alert(err.message);
+  }
+});
+
+// ── 補登打卡 ──────────────────────────────────────────
+async function openPunchModal(employeeId, name) {
+  if (!employees.length) {
+    employees = await api('listEmployees', {});
+  }
+
+  $('np-employee').innerHTML = employees
+    .filter(function (e) { return e.狀態 === '在職'; })
+    .map(function (e) {
+      return '<option value="' + esc(e.員工編號) + '"' +
+             (e.員工編號 === employeeId ? ' selected' : '') + '>' +
+             esc(e.姓名) + '（' + esc(storeName(e.所屬店)) + '）</option>';
+    }).join('');
+
+  $('np-date').value = $('daily-date').value || todayStr();
+  $('np-time').value = '';
+  $('np-reason').value = '';
+  showMsg('np-msg', '');
+  openModal('modal-punch');
+}
+
+$('btn-add-punch').addEventListener('click', function () { openPunchModal(); });
+
+$('daily-table').addEventListener('click', function (e) {
+  const btn = e.target.closest('button');
+  if (!btn) return;
+
+  if (btn.dataset.punch) {
+    openPunchModal(btn.dataset.punch, btn.dataset.name);
+  }
+  if (btn.dataset.edit) {
+    $('edit-info').textContent = btn.dataset.label;
+    $('ed-time').value = '';
+    $('ed-reason').value = '';
+    showMsg('ed-msg', '');
+    $('modal-edit').dataset.recordId = btn.dataset.edit;
+    openModal('modal-edit');
+  }
+});
+
+$('np-submit').addEventListener('click', async function () {
+  const btn = this;
+  btn.disabled = true; btn.textContent = '處理中…';
+  showMsg('np-msg', '');
+
+  try {
+    const result = await api('createPunchRecord', {
+      params: {
+        employeeId: $('np-employee').value,
+        date: $('np-date').value,
+        time: $('np-time').value,
+        type: $('np-type').value,
+        reason: $('np-reason').value.trim(),
+      },
+    });
+
+    closeModal('modal-punch');
+    toast(result.員工 + ' ' + result.日期 + ' ' + result.時間 + ' ' + result.類型 + '已補登');
+    loadDaily();
+
+  } catch (err) {
+    showMsg('np-msg', esc(err.message));
+  } finally {
+    btn.disabled = false; btn.textContent = '確認補登';
+  }
+});
+
+// ── 修改／作廢 ────────────────────────────────────────
+$('ed-submit').addEventListener('click', async function () {
+  const btn = this;
+  btn.disabled = true;
+  showMsg('ed-msg', '');
+
+  try {
+    await api('updatePunchRecord', {
+      recordId: $('modal-edit').dataset.recordId,
+      time: $('ed-time').value,
+      reason: $('ed-reason').value.trim(),
+    });
+    closeModal('modal-edit');
+    toast('時間已修改');
+    loadDaily();
+  } catch (err) {
+    showMsg('ed-msg', esc(err.message));
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+$('ed-void').addEventListener('click', async function () {
+  if (!confirm('確定要作廢這筆打卡紀錄嗎？\n\n資料會保留供稽核，但不列入時數計算。')) return;
+
+  const btn = this;
+  btn.disabled = true;
+
+  try {
+    await api('voidPunchRecord', {
+      recordId: $('modal-edit').dataset.recordId,
+      reason: $('ed-reason').value.trim() || '主管作廢',
+    });
+    closeModal('modal-edit');
+    toast('已作廢');
+    loadDaily();
+  } catch (err) {
+    showMsg('ed-msg', esc(err.message));
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+// ── 調整半徑 ──────────────────────────────────────────
+$('venue-table').addEventListener('click', async function (e) {
+  const btn = e.target.closest('button');
+  if (!btn || !btn.dataset.radius) return;
+
+  const input = prompt(
+    btn.dataset.name + ' 的打卡半徑（公尺）\n\n' +
+    '目前：' + btn.dataset.current + ' 公尺\n' +
+    '建議 100–150。室內訊號差的店可以放寬，但太大會失去定位意義。',
+    btn.dataset.current
+  );
+  if (input === null) return;
+
+  try {
+    await api('setVenueLocation', { storeCode: btn.dataset.radius, radius: Number(input) });
+    toast('半徑已更新');
+    loadVenues();
+  } catch (err) {
+    alert(err.message);
+  }
+});
+
+// ── 啟動 ─────────────────────────────────────────────
+(function init() {
+  const saved = localStorage.getItem('clockin_session');
+  if (saved) {
+    try {
+      session = JSON.parse(saved);
+      enterApp().catch(function () { logout(); });
+      return;
+    } catch (e) { /* 壞掉的就當沒登入 */ }
+  }
+  $('login').style.display = 'flex';
+})();
+</script>
+</body>
+</html>
