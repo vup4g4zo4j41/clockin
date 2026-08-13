@@ -1173,9 +1173,11 @@ function renderLeaveBalance(balances) {
     ? tracked.map(function (b) {
         // 用假別代碼當標題（特休、病假），不用全名（特別休假、普通傷病假）——
         // 全名在四格並排的手機版面會折行，把數字擠歪
+        // 生理假是每月重算的，不寫清楚會被當成年度額度
+        const unit = b.額度類型 === '每月' ? '小時（本月）' : '小時可用';
         return '<div><div class="k">' + esc(b.假別代碼 || b.名稱) + '</div>' +
           '<div class="v">' + b.剩餘時數 + '</div>' +
-          '<div class="k">小時可用</div></div>';
+          '<div class="k">' + unit + '</div></div>';
       }).join('')
     : '';
 }

@@ -2465,8 +2465,10 @@ async function showBalances(employeeId, name) {
             '">' + b.剩餘時數 + ' 小時</span>';
 
         return '<tr>' +
-          '<td>' + esc(b.名稱) + '</td>' +
-          '<td class="num">' + quota + '</td>' +
+          '<td>' + esc(b.名稱) +
+            (b.說明 ? '<div class="sub">' + esc(b.說明) + '</div>' : '') + '</td>' +
+          '<td class="num">' + quota +
+            (b.額度類型 === '每月' ? '<div class="sub">每月</div>' : '') + '</td>' +
           '<td class="num">' + b.已用時數 + ' 小時</td>' +
           '<td class="num">' + remain + '</td>' +
           '</tr>';
