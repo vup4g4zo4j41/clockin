@@ -722,6 +722,16 @@ let session = null;   // { token, employee }
 let venues = [];
 let employees = [];
 
+/** 是否為最高權限。後端每個動作都會自己再驗一次，這裡只管畫面要不要顯示。 */
+function isOwner() {
+  return !!session && session.employee.角色 === '最高權限';
+}
+
+/** 有人實際上班的店。總公司只掛管理層帳號，不排班也不出勤。 */
+function operatingVenues() {
+  return venues.filter(function (v) { return v.可排班 !== false; });
+}
+
 // ── API ──────────────────────────────────────────────
 //
 // Apps Script 的網頁應用程式會把請求轉一次址才回結果，那一跳偶爾會掉，
@@ -852,9 +862,8 @@ async function enterApp() {
   $('who-name').textContent = session.employee.姓名;
   $('who-role').textContent = session.employee.角色;
 
-  if (session.employee.角色 !== '最高權限') {
-    $('nav-audit').classList.add('hidden');
-  }
+  // 異動紀錄是全公司的，店長不該看到別店的操作
+  $('nav-audit').classList.toggle('hidden', !isOwner());
 
   // 一次拿齊基礎資料，避免開啟後台就發三次請求各等一到三秒
   const boot = await api('getAdminBootstrap');
@@ -871,28 +880,40 @@ async function enterApp() {
 }
 
 function fillStoreSelects() {
-  const opts = venues.map(function (v) {
-    return '<option value="' + esc(v.店代碼) + '">' + esc(v.店名) + '</option>';
-  }).join('');
+  const toOpts = function (list) {
+    return list.map(function (v) {
+      return '<option value="' + esc(v.店代碼) + '">' + esc(v.店名) + '</option>';
+    }).join('');
+  };
 
-  const all = '<option value="">全部分店</option>';
+  const opts = toOpts(operatingVenues());   // 班表、出勤：不含總公司
+  const allOpts = toOpts(venues);           // 員工名單：管理層掛在總公司，要看得到
+
+  // 店長只有一間店，「全部分店」對他沒有意義，出現反而讓人以為看得到別店
+  const all = isOwner() ? '<option value="">全部分店</option>' : '';
   $('daily-store').innerHTML = all + opts;
   $('monthly-store').innerHTML = all + opts;
-  $('emp-store').innerHTML = all + opts;
+  $('emp-store').innerHTML = all + allOpts;
   $('pattern-store').innerHTML = all + opts;
-  $('ne-store').innerHTML = opts;
 
-  // 班表以單店為單位排，不提供「全部分店」
+  // 班表以單店為單位排，本來就不提供「全部分店」
   $('sched-store').innerHTML = opts;
   $('gen-store').innerHTML = opts;
 
+  // 新增員工：店長只能建在自己那間店
+  $('ne-store').innerHTML = isOwner() ? allOpts : opts;
+
   // 班別適用範圍：最高權限才能建通用班別
   $('ns-scope').innerHTML =
-    (session.employee.角色 === '最高權限' ? '<option value="通用">通用（六店共用）</option>' : '') + opts;
+    (isOwner() ? '<option value="通用">通用（六店共用）</option>' : '') + opts;
 
   // 預設帶自己所屬店，店長進來就直接是自己那間
   if (session.employee.所屬店) {
     $('sched-store').value = session.employee.所屬店;
+    if (!isOwner()) {
+      ['daily-store', 'monthly-store', 'emp-store', 'pattern-store', 'gen-store', 'ne-store']
+        .forEach(function (id) { $(id).value = session.employee.所屬店; });
+    }
   }
 }
 
@@ -1088,13 +1109,16 @@ async function loadEmployees() {
       '<th>狀態</th><th></th></tr></thead><tbody>' +
       employees.map(function (e) {
         const statusMap = { '在職': 'ok', '待註冊': 'warn', '停用': 'mute' };
-        const isOwner = session.employee.角色 === '最高權限';
 
         let actions = '';
-        if (isOwner) {
-          if (e.狀態 === '待註冊') {
-            actions += '<button class="btn sm" data-reissue="' + esc(e.員工編號) + '">重發連結</button>';
-          }
+
+        // 重發連結：店長可以重發自己店的員工，但主管的連結只有最高權限能重發
+        if (e.狀態 === '待註冊' && (isOwner() || e.角色 === '員工')) {
+          actions += '<button class="btn sm" data-reissue="' + esc(e.員工編號) + '">重發連結</button>';
+        }
+
+        // 停用與復職一律只限最高權限——這是離職把關點，不下放
+        if (isOwner()) {
           if (e.狀態 === '停用') {
             actions += '<button class="btn sm" data-enable="' + esc(e.員工編號) + '">復職</button>';
           } else {
@@ -1820,9 +1844,8 @@ $('btn-add-shift').addEventListener('click', function () {
   showMsg('ns-msg', '');
   updateShiftPreview();
 
-  if (session.employee.角色 !== '最高權限') {
-    $('ns-scope-field').classList.add('hidden');
-  }
+  // 店長只能建自己店的班別，適用範圍沒得選，直接不顯示
+  $('ns-scope-field').classList.toggle('hidden', !isOwner());
   openModal('modal-shift');
 });
 
@@ -2025,6 +2048,17 @@ $('btn-add-employee').addEventListener('click', function () {
   $('ne-result').classList.add('hidden');
   $('ne-submit').classList.remove('hidden');
   showMsg('ne-msg', '');
+
+  // 店長只能建「員工」。若讓他建店長，等於他可以自己造一把萬能鑰匙。
+  // 後端也擋，這裡只是不要讓人白填一輪才被拒絕。
+  $('ne-role').innerHTML = isOwner()
+    ? '<option value="員工">員工</option>' +
+      '<option value="店長">店長</option>' +
+      '<option value="最高權限">最高權限</option>'
+    : '<option value="員工">員工</option>';
+  $('ne-role').disabled = !isOwner();
+  $('ne-store').disabled = !isOwner();
+
   openModal('modal-employee');
 });
 
