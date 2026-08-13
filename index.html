@@ -249,8 +249,13 @@
     border: 1px solid var(--rule); border-radius: 12px; overflow: hidden;
   }
   .balance:empty { display: none; }
-  .balance div { background: var(--surface); padding: 0.8rem 0.7rem; text-align: center; }
-  .balance .k { font-size: 0.72rem; color: var(--muted); }
+  .balance div {
+    background: var(--surface); padding: 0.8rem 0.5rem; text-align: center;
+    display: flex; flex-direction: column; justify-content: center; gap: 0.1rem;
+  }
+  /* 標籤鎖住兩行高度，某一格折行時數字才不會被推歪 */
+  .balance .k { font-size: 0.72rem; color: var(--muted); line-height: 1.3; min-height: 1.9em; }
+  .balance .k:last-child { min-height: 0; }
   .balance .v { font-size: 1.25rem; font-weight: 700; font-variant-numeric: tabular-nums; }
 
   .section-title { font-size: 0.85rem; color: var(--ink-2); font-weight: 650; margin-top: 0.4rem; }
@@ -1166,7 +1171,9 @@ function renderLeaveBalance(balances) {
 
   document.getElementById('leave-balance').innerHTML = tracked.length
     ? tracked.map(function (b) {
-        return '<div><div class="k">' + esc(b.名稱) + '</div>' +
+        // 用假別代碼當標題（特休、病假），不用全名（特別休假、普通傷病假）——
+        // 全名在四格並排的手機版面會折行，把數字擠歪
+        return '<div><div class="k">' + esc(b.假別代碼 || b.名稱) + '</div>' +
           '<div class="v">' + b.剩餘時數 + '</div>' +
           '<div class="k">小時可用</div></div>';
       }).join('')
