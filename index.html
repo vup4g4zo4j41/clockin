@@ -139,6 +139,7 @@
   .tag.warn { background: var(--warn-soft); color: var(--warn); }
   .tag.crit { background: var(--crit-soft); color: var(--crit); }
   .tag.info { background: #E6EDF0; color: var(--accent); }
+  .tag.mute { background: #E6EDF0; color: var(--muted); }
 
   /* ── 結果畫面 ── */
   #screen-result { align-items: center; justify-content: center; text-align: center; gap: 0.5rem; }
@@ -229,6 +230,33 @@
   .log-row .h { font-size: 0.85rem; color: var(--ink-2); text-align: right; }
 
   .empty { text-align: center; color: var(--muted); font-size: 0.9rem; padding: 2.5rem 1rem; }
+
+  /* ── 請假 ── */
+  .field select {
+    font-family: inherit; font-size: 1rem;
+    padding: 0.8rem 0.9rem;
+    border: 1px solid var(--rule); border-radius: 10px;
+    background: var(--surface); color: var(--ink);
+    appearance: none;
+  }
+  .field select:focus { outline: 2px solid var(--accent); outline-offset: 0; border-color: transparent; }
+
+  /* 特休、病假這些有額度的假別，剩多少一眼看到 */
+  .balance {
+    display: grid; grid-auto-flow: column; grid-auto-columns: 1fr;
+    gap: 1px; background: var(--rule);
+    border: 1px solid var(--rule); border-radius: 12px; overflow: hidden;
+  }
+  .balance:empty { display: none; }
+  .balance div { background: var(--surface); padding: 0.8rem 0.7rem; text-align: center; }
+  .balance .k { font-size: 0.72rem; color: var(--muted); }
+  .balance .v { font-size: 1.25rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+
+  .section-title { font-size: 0.85rem; color: var(--ink-2); font-weight: 650; margin-top: 0.4rem; }
+
+  .msg { font-size: 0.88rem; padding: 0.7rem 0.9rem; border-radius: 10px; line-height: 1.5; }
+  .msg.ok    { background: var(--ok-soft);   color: var(--ok); }
+  .msg.error { background: var(--crit-soft); color: var(--crit); }
 
   /* ── 底部分頁 ── */
   .tabs {
@@ -353,6 +381,42 @@
     <div class="log" id="records-log"></div>
   </div>
 
+  <!-- 請假 -->
+  <div class="screen" id="screen-leave">
+    <div class="header">
+      <div class="name">請假</div>
+      <div class="sub" id="leave-sub">送出後由主管審核，核准才會生效</div>
+    </div>
+
+    <div class="balance" id="leave-balance"></div>
+
+    <div style="display:flex; flex-direction:column; gap:0.9rem">
+      <div class="field">
+        <label for="lv-type">假別</label>
+        <select id="lv-type"></select>
+      </div>
+      <div class="field">
+        <label for="lv-start">開始</label>
+        <input type="datetime-local" id="lv-start">
+      </div>
+      <div class="field">
+        <label for="lv-end">結束</label>
+        <input type="datetime-local" id="lv-end">
+        <span class="hint" id="lv-hint">請整天的話，填當天上下班時間即可</span>
+      </div>
+      <div class="field">
+        <label for="lv-reason">事由</label>
+        <input type="text" id="lv-reason" placeholder="例如：家人就醫">
+      </div>
+
+      <div id="lv-msg" style="display:none"></div>
+      <button class="btn primary" id="lv-submit">送出假單</button>
+    </div>
+
+    <div class="section-title">我的假單</div>
+    <div class="log" id="leave-log"></div>
+  </div>
+
   <!-- 註冊 -->
   <div class="screen" id="screen-register">
     <div class="header">
@@ -399,6 +463,7 @@
   <div class="tabs" id="tabs" style="display:none">
     <button data-tab="punch" class="active">打卡</button>
     <button data-tab="records">我的紀錄</button>
+    <button data-tab="leave">請假</button>
   </div>
 
 </div>
@@ -916,6 +981,126 @@ async function savePoint(btn, params, label) {
 }
 
 // ─────────────────────────────────────────────
+// 請假
+// ─────────────────────────────────────────────
+let leaveData = null;
+
+const LEAVE_TAG = {
+  '待審核': 'info', '已核准': 'ok', '已退回': 'warn', '已作廢': 'mute',
+};
+
+async function loadLeaveScreen() {
+  show('leave');
+  document.getElementById('leave-log').innerHTML = '<div class="empty">載入中…</div>';
+
+  try {
+    leaveData = await api('getLeaveFormData', { idToken: idToken });
+    renderLeaveBalance(leaveData.餘額);
+    renderLeaveTypes(leaveData.假別);
+    renderMyLeaves(leaveData.假單);
+    document.getElementById('leave-sub').textContent =
+      leaveData.年度 + ' 年度 · 送出後由主管審核，核准才會生效';
+  } catch (err) {
+    document.getElementById('leave-log').innerHTML =
+      '<div class="empty">' + esc(err.message) + '</div>';
+  }
+}
+
+/** 只顯示有額度可追蹤的假別，其他（喪假、公假等）沒有餘額概念，列出來只是噪音。 */
+function renderLeaveBalance(balances) {
+  const tracked = (balances || []).filter(function (b) {
+    return b.追蹤餘額 && b.剩餘時數 !== null;
+  });
+
+  document.getElementById('leave-balance').innerHTML = tracked.length
+    ? tracked.map(function (b) {
+        return '<div><div class="k">' + esc(b.名稱) + '</div>' +
+          '<div class="v">' + b.剩餘時數 + '</div>' +
+          '<div class="k">小時可用</div></div>';
+      }).join('')
+    : '';
+}
+
+function renderLeaveTypes(types) {
+  document.getElementById('lv-type').innerHTML = (types || []).map(function (t) {
+    return '<option value="' + esc(t.假別代碼) + '">' + esc(t.名稱) + '</option>';
+  }).join('');
+}
+
+function renderMyLeaves(leaves) {
+  const log = document.getElementById('leave-log');
+
+  if (!leaves || !leaves.length) {
+    log.innerHTML = '<div class="empty">今年還沒有送過假單</div>';
+    return;
+  }
+
+  log.innerHTML = leaves.map(function (l) {
+    const range = l.開始時間.slice(5, 16).replace('T', ' ') + ' → ' +
+                  l.結束時間.slice(5, 16).replace('T', ' ');
+
+    // 被退回的單要看得到原因，不然員工不知道要改什麼
+    const note = l.狀態 === '已退回' && l.退回原因
+      ? '<div class="d" style="grid-column:1/-1">退回原因：' + esc(l.退回原因) + '</div>'
+      : '';
+
+    return '<div class="log-row" style="grid-template-columns:1fr auto">' +
+      '<div><div class="t">' + esc(l.假別) + ' · ' + l.時數 + ' 小時' +
+        (l.臨時請假 ? ' <span class="tag warn">臨時</span>' : '') + '</div>' +
+        '<div class="d">' + esc(range) + '</div></div>' +
+      '<span class="tag ' + (LEAVE_TAG[l.狀態] || 'info') + '">' + esc(l.狀態) + '</span>' +
+      note +
+      '</div>';
+  }).join('');
+}
+
+function showLeaveMsg(text, isError) {
+  const el = document.getElementById('lv-msg');
+  if (!text) { el.style.display = 'none'; return; }
+  el.textContent = text;
+  el.style.display = '';
+  el.className = isError ? 'msg error' : 'msg ok';
+}
+
+document.getElementById('lv-submit').addEventListener('click', async function () {
+  const btn = this;
+  const start = document.getElementById('lv-start').value;
+  const end = document.getElementById('lv-end').value;
+
+  if (!start || !end) { showLeaveMsg('請選擇開始與結束時間', true); return; }
+  if (end <= start) { showLeaveMsg('結束時間要晚於開始時間', true); return; }
+
+  btn.disabled = true;
+  btn.textContent = '送出中…';
+  showLeaveMsg('');
+
+  try {
+    const result = await api('submitLeave', {
+      idToken: idToken,
+      params: {
+        假別: document.getElementById('lv-type').value,
+        開始時間: start.replace('T', ' '),
+        結束時間: end.replace('T', ' '),
+        事由: document.getElementById('lv-reason').value.trim(),
+      },
+    });
+
+    showLeaveMsg(result.訊息 + '（' + result.時數 + ' 小時）', false);
+    document.getElementById('lv-reason').value = '';
+
+    leaveData = await api('getLeaveFormData', { idToken: idToken });
+    renderLeaveBalance(leaveData.餘額);
+    renderMyLeaves(leaveData.假單);
+
+  } catch (err) {
+    showLeaveMsg(err.message, true);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '送出假單';
+  }
+});
+
+// ─────────────────────────────────────────────
 // 註冊
 // ─────────────────────────────────────────────
 async function loadRegisterScreen(token) {
@@ -1041,6 +1226,8 @@ document.getElementById('tabs').addEventListener('click', function (e) {
 
   if (btn.dataset.tab === 'punch') {
     loadPunchScreen().catch(function (err) { showError('無法載入', err.message); });
+  } else if (btn.dataset.tab === 'leave') {
+    loadLeaveScreen();
   } else {
     loadRecords();
   }

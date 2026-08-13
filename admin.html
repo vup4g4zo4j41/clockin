@@ -179,6 +179,15 @@
   /* 次數旁邊的累計分鐘，比次數低一階 */
   td .sub { font-size: 0.8rem; color: var(--muted); white-space: nowrap; }
 
+  /* 分頁上的待辦數字，有幾張單等著審一眼看到 */
+  .badge {
+    display: inline-block; margin-left: 0.35rem;
+    min-width: 1.15rem; padding: 0 0.32rem;
+    background: var(--crit); color: #fff;
+    border-radius: 99px; font-size: 0.72rem; font-weight: 700;
+    line-height: 1.5; text-align: center; vertical-align: 1px;
+  }
+
   .empty { padding: 2.5rem 1rem; text-align: center; color: var(--muted); font-size: 0.9rem; }
 
   /* ── 對話框 ── */
@@ -357,6 +366,7 @@
       <button data-view="schedule">班表</button>
       <button data-view="shifts">班別</button>
       <button data-view="monthly">月統計</button>
+      <button data-view="leaves">假單<span class="badge hidden" id="leave-badge"></span></button>
       <button data-view="employees">員工</button>
       <button data-view="venues">場館</button>
       <button data-view="audit" id="nav-audit">異動紀錄</button>
@@ -474,6 +484,29 @@
       </div>
     </section>
 
+    <!-- 假單 -->
+    <section class="view" id="view-leaves">
+      <div class="panel">
+        <div class="panel-head">
+          <h2>待審核</h2>
+          <span class="count" id="pending-count">—</span>
+          <button class="btn sm" id="leave-reload">重新整理</button>
+        </div>
+        <div class="scroll"><table id="pending-table"></table></div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <h2>假單紀錄</h2>
+          <select id="leave-store"></select>
+          <input type="month" id="leave-month">
+          <button class="btn" id="leave-query">查詢</button>
+          <button class="btn primary" id="btn-add-leave">代員工建立</button>
+        </div>
+        <div class="scroll"><table id="leave-table"></table></div>
+      </div>
+    </section>
+
     <!-- 場館 -->
     <section class="view" id="view-venues">
       <div class="panel">
@@ -528,6 +561,41 @@
     <div class="modal-actions">
       <button class="btn" data-close>關閉</button>
       <button class="btn primary" id="ne-submit">建立並產生連結</button>
+    </div>
+  </div>
+</div>
+
+<!-- 代員工建立假單 -->
+<div class="overlay" id="modal-leave">
+  <div class="modal">
+    <h2>代員工建立假單</h2>
+    <p class="hint" style="margin-bottom:0.9rem">
+      主管代填的假單直接生效，不用再審核，班表當天會自動改成「請假」。
+    </p>
+    <div class="field">
+      <label for="nl-employee">員工</label>
+      <select id="nl-employee"></select>
+    </div>
+    <div class="field">
+      <label for="nl-type">假別</label>
+      <select id="nl-type"></select>
+    </div>
+    <div class="field">
+      <label for="nl-start">開始</label>
+      <input type="datetime-local" id="nl-start">
+    </div>
+    <div class="field">
+      <label for="nl-end">結束</label>
+      <input type="datetime-local" id="nl-end">
+    </div>
+    <div class="field">
+      <label for="nl-reason">事由</label>
+      <input type="text" id="nl-reason" placeholder="例如：家人就醫">
+    </div>
+    <div id="nl-msg"></div>
+    <div class="modal-actions">
+      <button class="btn" data-close>關閉</button>
+      <button class="btn primary" id="nl-submit">建立</button>
     </div>
   </div>
 </div>
@@ -877,8 +945,13 @@ async function enterApp() {
   $('daily-date').value = todayStr();
   $('monthly-month').value = monthStr();
   $('sched-month').value = monthStr();
+  $('leave-month').value = monthStr();
 
   await loadDaily();
+
+  // 一進後台就把待審張數撈回來標在分頁上——不推播通知，
+  // 主管唯一會發現有人請假的地方就是這裡。
+  loadPendingLeaveCount();
 }
 
 function fillStoreSelects() {
@@ -897,6 +970,7 @@ function fillStoreSelects() {
   $('monthly-store').innerHTML = all + opts;
   $('emp-store').innerHTML = all + allOpts;
   $('pattern-store').innerHTML = all + opts;
+  $('leave-store').innerHTML = all + allOpts;
 
   // 班表以單店為單位排，本來就不提供「全部分店」
   $('sched-store').innerHTML = opts;
@@ -913,7 +987,8 @@ function fillStoreSelects() {
   if (session.employee.所屬店) {
     $('sched-store').value = session.employee.所屬店;
     if (!isOwner()) {
-      ['daily-store', 'monthly-store', 'emp-store', 'pattern-store', 'gen-store', 'ne-store']
+      ['daily-store', 'monthly-store', 'emp-store', 'pattern-store', 'gen-store',
+       'ne-store', 'leave-store']
         .forEach(function (id) { $(id).value = session.employee.所屬店; });
     }
   }
@@ -948,6 +1023,7 @@ $('nav').addEventListener('click', function (e) {
   const loaders = {
     daily: loadDaily, monthly: loadMonthly, schedule: loadSchedule,
     shifts: loadShifts, employees: loadEmployees, venues: loadVenues, audit: loadAudit,
+    leaves: loadLeaves,
   };
 
   if (!loaders[view]) return;
@@ -2043,6 +2119,236 @@ async function loadVenues() {
     table.innerHTML = '<tbody><tr><td class="empty">' + esc(err.message) + '</td></tr></tbody>';
   }
 }
+
+// ── 假單 ─────────────────────────────────────────────
+const LEAVE_TAG = { '待審核': 'info', '已核准': 'ok', '已退回': 'warn', '已作廢': 'mute' };
+let leaveTypes = [];
+
+/** 「2026-08-14 09:00」→「08/14 09:00」，表格塞得下又看得懂。 */
+function shortDateTime(v) {
+  const s = String(v || '').replace('T', ' ');
+  return s.length >= 16 ? s.slice(5, 16) : s;
+}
+
+async function loadLeaves() {
+  await Promise.all([loadPendingLeaves(), loadLeaveHistory()]);
+}
+
+/** 只更新分頁上的數字，不動畫面——進後台時背景跑，不拖慢首頁。 */
+async function loadPendingLeaveCount() {
+  try {
+    const list = await api('listPendingLeaves');
+    updateLeaveBadge(list.length);
+  } catch (err) {
+    // 拿不到就算了，不要為了一個數字擋住整個後台
+  }
+}
+
+async function loadPendingLeaves() {
+  const table = $('pending-table');
+  table.innerHTML = '<tbody><tr><td class="empty">載入中…</td></tr></tbody>';
+
+  try {
+    const list = await api('listPendingLeaves');
+    updateLeaveBadge(list.length);
+    $('pending-count').textContent = list.length + ' 張';
+
+    if (!list.length) {
+      table.innerHTML = '<tbody><tr><td class="empty">沒有待審核的假單</td></tr></tbody>';
+      return;
+    }
+
+    table.innerHTML =
+      '<thead><tr><th>送出</th><th>姓名</th><th>店</th><th>假別</th><th>起訖</th>' +
+      '<th class="num">時數</th><th>事由</th><th></th></tr></thead><tbody>' +
+      list.map(function (l) {
+        return '<tr>' +
+          '<td class="mono">' + esc(shortDateTime(l.建立時間)) + '</td>' +
+          '<td>' + esc(l.姓名) + (l.臨時請假 ? ' <span class="tag warn">臨時</span>' : '') + '</td>' +
+          '<td>' + esc(storeName(l.所屬店)) + '</td>' +
+          '<td>' + esc(l.假別) + '</td>' +
+          '<td class="mono">' + esc(shortDateTime(l.開始時間)) + ' – ' +
+            esc(shortDateTime(l.結束時間)) + '</td>' +
+          '<td class="num">' + l.時數 + '</td>' +
+          '<td>' + esc(l.事由 || '') + '</td>' +
+          '<td class="actions">' +
+            '<button class="btn sm" data-approve="' + esc(l.單號) + '" data-name="' + esc(l.姓名) +
+              '" data-info="' + esc(l.假別 + ' ' + l.時數 + ' 小時') + '">核准</button>' +
+            '<button class="btn sm danger" data-reject="' + esc(l.單號) +
+              '" data-name="' + esc(l.姓名) + '">退回</button>' +
+          '</td></tr>';
+      }).join('') + '</tbody>';
+
+  } catch (err) {
+    table.innerHTML = '<tbody><tr><td class="empty">' + esc(err.message) + '</td></tr></tbody>';
+  }
+}
+
+function updateLeaveBadge(count) {
+  const badge = $('leave-badge');
+  badge.textContent = count || '';
+  badge.classList.toggle('hidden', !count);
+}
+
+async function loadLeaveHistory() {
+  const table = $('leave-table');
+  table.innerHTML = '<tbody><tr><td class="empty">載入中…</td></tr></tbody>';
+
+  try {
+    const list = await api('listLeaves', {
+      storeCode: $('leave-store').value,
+      month: $('leave-month').value,
+    });
+
+    if (!list.length) {
+      table.innerHTML = '<tbody><tr><td class="empty">這個月份沒有假單</td></tr></tbody>';
+      return;
+    }
+
+    table.innerHTML =
+      '<thead><tr><th>姓名</th><th>店</th><th>假別</th><th>起訖</th><th class="num">時數</th>' +
+      '<th>狀態</th><th>審核</th><th>事由／退回原因</th><th></th></tr></thead><tbody>' +
+      list.map(function (l) {
+        const note = l.狀態 === '已退回' && l.退回原因 ? l.退回原因 : (l.事由 || '');
+        const canCancel = l.狀態 === '待審核' || l.狀態 === '已核准';
+
+        return '<tr>' +
+          '<td>' + esc(l.姓名) + '</td>' +
+          '<td>' + esc(storeName(l.所屬店)) + '</td>' +
+          '<td>' + esc(l.假別) + '</td>' +
+          '<td class="mono">' + esc(shortDateTime(l.開始時間)) + ' – ' +
+            esc(shortDateTime(l.結束時間)) + '</td>' +
+          '<td class="num">' + l.時數 + '</td>' +
+          '<td><span class="tag ' + (LEAVE_TAG[l.狀態] || 'info') + '">' + esc(l.狀態) + '</span></td>' +
+          '<td>' + esc(l.審核人 || '') + '</td>' +
+          '<td>' + esc(note) + '</td>' +
+          '<td class="actions">' + (canCancel
+            ? '<button class="btn sm danger" data-cancel="' + esc(l.單號) +
+              '" data-name="' + esc(l.姓名) + '" data-status="' + esc(l.狀態) + '">作廢</button>'
+            : '') + '</td></tr>';
+      }).join('') + '</tbody>';
+
+  } catch (err) {
+    table.innerHTML = '<tbody><tr><td class="empty">' + esc(err.message) + '</td></tr></tbody>';
+  }
+}
+
+$('leave-reload').addEventListener('click', loadPendingLeaves);
+$('leave-query').addEventListener('click', loadLeaveHistory);
+
+$('pending-table').addEventListener('click', async function (e) {
+  const btn = e.target.closest('button');
+  if (!btn) return;
+
+  if (btn.dataset.approve) {
+    if (!confirm('核准「' + btn.dataset.name + '」的假單？\n\n' + btn.dataset.info +
+                 '\n\n核准後班表當天會自動改成「請假」，時數也會計入。')) return;
+
+    btn.disabled = true;
+    try {
+      await api('approveLeave', { leaveId: btn.dataset.approve });
+      invalidateViews();
+      toast('已核准');
+      loadLeaves();
+    } catch (err) { alert(err.message); btn.disabled = false; }
+    return;
+  }
+
+  if (btn.dataset.reject) {
+    const reason = prompt('退回「' + btn.dataset.name + '」的假單，原因是？\n\n' +
+                          '員工會在 LINE 看到這段說明。退回後不能改，要重新填一張新的。');
+    if (reason === null || !reason.trim()) return;
+
+    btn.disabled = true;
+    try {
+      await api('rejectLeave', { leaveId: btn.dataset.reject, reason: reason.trim() });
+      invalidateViews();
+      toast('已退回');
+      loadLeaves();
+    } catch (err) { alert(err.message); btn.disabled = false; }
+  }
+});
+
+$('leave-table').addEventListener('click', async function (e) {
+  const btn = e.target.closest('button');
+  if (!btn || !btn.dataset.cancel) return;
+
+  const extra = btn.dataset.status === '已核准'
+    ? '\n\n這張單已核准，作廢後班表那幾天會還原成原本的班。'
+    : '';
+  if (!confirm('作廢「' + btn.dataset.name + '」的假單？' + extra)) return;
+
+  const reason = prompt('作廢原因（可留空）') || '';
+
+  try {
+    await api('cancelLeave', { leaveId: btn.dataset.cancel, reason: reason });
+    invalidateViews();
+    toast('已作廢');
+    loadLeaves();
+  } catch (err) { alert(err.message); }
+});
+
+$('btn-add-leave').addEventListener('click', async function () {
+  $('nl-reason').value = '';
+  $('nl-start').value = '';
+  $('nl-end').value = '';
+  showMsg('nl-msg', '');
+
+  // 停用的人不該還能請假
+  $('nl-employee').innerHTML = employees.filter(function (e) {
+    return e.狀態 !== '停用';
+  }).map(function (e) {
+    return '<option value="' + esc(e.員工編號) + '">' + esc(e.姓名) +
+      (e.中文姓名 ? '（' + esc(e.中文姓名) + '）' : '') + ' · ' + esc(storeName(e.所屬店)) +
+      '</option>';
+  }).join('');
+
+  openModal('modal-leave');
+
+  if (!leaveTypes.length) {
+    try {
+      leaveTypes = await api('listLeaveTypes');
+    } catch (err) { showMsg('nl-msg', esc(err.message)); return; }
+  }
+
+  $('nl-type').innerHTML = leaveTypes.map(function (t) {
+    return '<option value="' + esc(t.假別代碼) + '">' + esc(t.名稱) + '</option>';
+  }).join('');
+});
+
+$('nl-submit').addEventListener('click', async function () {
+  const btn = this;
+  const start = $('nl-start').value;
+  const end = $('nl-end').value;
+
+  if (!start || !end) { showMsg('nl-msg', '請選擇開始與結束時間'); return; }
+  if (end <= start) { showMsg('nl-msg', '結束時間要晚於開始時間'); return; }
+
+  btn.disabled = true; btn.textContent = '建立中…';
+  showMsg('nl-msg', '');
+
+  try {
+    const result = await api('createLeaveByManager', {
+      params: {
+        employeeId: $('nl-employee').value,
+        假別: $('nl-type').value,
+        開始時間: start.replace('T', ' '),
+        結束時間: end.replace('T', ' '),
+        事由: $('nl-reason').value.trim(),
+      },
+    });
+
+    closeModal('modal-leave');
+    invalidateViews();
+    toast(result.姓名 + ' 的假單已建立，' + result.時數 + ' 小時');
+    loadLeaves();
+
+  } catch (err) {
+    showMsg('nl-msg', esc(err.message));
+  } finally {
+    btn.disabled = false; btn.textContent = '建立';
+  }
+});
 
 // ── 異動紀錄 ──────────────────────────────────────────
 async function loadAudit() {
