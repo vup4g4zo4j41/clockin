@@ -254,6 +254,15 @@
 
   .section-title { font-size: 0.85rem; color: var(--ink-2); font-weight: 650; margin-top: 0.4rem; }
 
+  /* 請整天 / 指定時段 */
+  .seg { display: flex; border: 1px solid var(--rule); border-radius: 10px; overflow: hidden; }
+  .seg button {
+    flex: 1; font-family: inherit; font-size: 0.92rem; font-weight: 600;
+    padding: 0.7rem 0.5rem; border: none; background: var(--surface);
+    color: var(--ink-2); cursor: pointer;
+  }
+  .seg button.active { background: var(--accent); color: #fff; }
+
   .msg { font-size: 0.88rem; padding: 0.7rem 0.9rem; border-radius: 10px; line-height: 1.5; }
   .msg.ok    { background: var(--ok-soft);   color: var(--ok); }
   .msg.error { background: var(--crit-soft); color: var(--crit); }
@@ -396,13 +405,35 @@
         <select id="lv-type"></select>
       </div>
       <div class="field">
-        <label for="lv-start">開始</label>
-        <input type="datetime-local" id="lv-start">
+        <label>請假方式</label>
+        <div class="seg" id="lv-mode">
+          <button type="button" data-mode="full" class="active">請整天</button>
+          <button type="button" data-mode="partial">指定時段</button>
+        </div>
       </div>
-      <div class="field">
-        <label for="lv-end">結束</label>
-        <input type="datetime-local" id="lv-end">
-        <span class="hint" id="lv-hint">請整天的話，填當天上下班時間即可</span>
+
+      <!-- 請整天：只選日期，時間由系統依當天班表帶入 -->
+      <div id="lv-full">
+        <div class="field">
+          <label for="lv-date-start">開始日期</label>
+          <input type="date" id="lv-date-start">
+        </div>
+        <div class="field" style="margin-top:0.9rem">
+          <label for="lv-date-end">結束日期</label>
+          <input type="date" id="lv-date-end">
+          <span class="hint">只請一天的話，兩個填一樣。時數依你當天的班表計算</span>
+        </div>
+      </div>
+
+      <div id="lv-partial" style="display:none">
+        <div class="field">
+          <label for="lv-start">開始</label>
+          <input type="datetime-local" id="lv-start">
+        </div>
+        <div class="field" style="margin-top:0.9rem">
+          <label for="lv-end">結束</label>
+          <input type="datetime-local" id="lv-end">
+        </div>
       </div>
       <div class="field">
         <label for="lv-reason">事由</label>
@@ -1082,13 +1113,35 @@ function showLeaveMsg(text, isError) {
   el.className = isError ? 'msg error' : 'msg ok';
 }
 
+let leaveMode = 'full';
+
+document.getElementById('lv-mode').addEventListener('click', function (e) {
+  const btn = e.target.closest('button');
+  if (!btn) return;
+
+  leaveMode = btn.dataset.mode;
+  this.querySelectorAll('button').forEach(function (b) {
+    b.classList.toggle('active', b === btn);
+  });
+  document.getElementById('lv-full').style.display = leaveMode === 'full' ? '' : 'none';
+  document.getElementById('lv-partial').style.display = leaveMode === 'full' ? 'none' : '';
+});
+
 document.getElementById('lv-submit').addEventListener('click', async function () {
   const btn = this;
-  const start = document.getElementById('lv-start').value;
-  const end = document.getElementById('lv-end').value;
 
-  if (!start || !end) { showLeaveMsg('請選擇開始與結束時間', true); return; }
-  if (end <= start) { showLeaveMsg('結束時間要晚於開始時間', true); return; }
+  let start, end;
+  if (leaveMode === 'full') {
+    start = document.getElementById('lv-date-start').value;
+    end = document.getElementById('lv-date-end').value;
+    if (!start || !end) { showLeaveMsg('請選擇開始與結束日期', true); return; }
+    if (end < start) { showLeaveMsg('結束日期不能早於開始日期', true); return; }
+  } else {
+    start = document.getElementById('lv-start').value.replace('T', ' ');
+    end = document.getElementById('lv-end').value.replace('T', ' ');
+    if (!start || !end) { showLeaveMsg('請選擇開始與結束時間', true); return; }
+    if (end <= start) { showLeaveMsg('結束時間要晚於開始時間', true); return; }
+  }
 
   btn.disabled = true;
   btn.textContent = '送出中…';
@@ -1099,8 +1152,9 @@ document.getElementById('lv-submit').addEventListener('click', async function ()
       idToken: idToken,
       params: {
         假別: document.getElementById('lv-type').value,
-        開始時間: start.replace('T', ' '),
-        結束時間: end.replace('T', ' '),
+        開始時間: start,
+        結束時間: end,
+        全天: leaveMode === 'full',
         事由: document.getElementById('lv-reason').value.trim(),
       },
     });
