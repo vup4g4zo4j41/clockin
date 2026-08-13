@@ -476,8 +476,8 @@
     <section class="view" id="view-venues">
       <div class="panel">
         <div class="panel-head">
-          <h2>場館與打卡範圍</h2>
-          <span class="count">座標請用手機在店裡設定</span>
+          <h2>場館與打卡點</h2>
+          <span class="count" id="venue-note">座標請用手機在店裡設定</span>
         </div>
         <div class="scroll"><table id="venue-table"></table></div>
       </div>
@@ -1971,27 +1971,59 @@ $('pattern-table').addEventListener('change', async function (e) {
 });
 
 // ── 場館 ─────────────────────────────────────────────
+/**
+ * 場館與其打卡點。一間店可以有好幾個點（景安的本館與貳館），
+ * 所以列的單位是「點」不是「店」，店只在第一列出現一次。
+ */
 async function loadVenues() {
   const table = $('venue-table');
   try {
     venues = await api('listVenues');
+
+    const rows = [];
+
+    venues.forEach(function (v) {
+      const points = v.打卡點 || [];
+      const storeCell =
+        '<td class="mono">' + esc(v.店代碼) + '</td>' +
+        '<td>' + esc(v.店名) + '</td>' +
+        '<td>' + esc(v.登記公司 || '') + '</td>';
+      const blankCell = '<td></td><td></td><td></td>';
+
+      if (!points.length) {
+        rows.push('<tr>' + storeCell +
+          '<td colspan="2"><span class="tag crit">尚未設定打卡點</span></td>' +
+          '<td>' + esc(v.狀態 || '') + '</td><td class="actions"></td></tr>');
+        return;
+      }
+
+      points.forEach(function (p, i) {
+        rows.push('<tr>' + (i === 0 ? storeCell : blankCell) +
+          '<td>' + esc(p.名稱 || '') + '</td>' +
+          '<td class="mono">' + (p.已設定座標
+            ? esc(p.緯度.toFixed(5) + ', ' + p.經度.toFixed(5)) +
+              ' <span class="tag mute">' + (p.允許半徑 || '') + ' m</span>'
+            : '<span class="tag crit">尚未設定座標</span>') + '</td>' +
+          '<td>' + (i === 0 ? esc(v.狀態 || '') : '') + '</td>' +
+          '<td class="actions">' +
+            '<button class="btn sm" data-radius="' + esc(p.點位代碼) +
+              '" data-current="' + (p.允許半徑 || 80) + '" data-name="' + esc(p.名稱) + '">調整半徑</button>' +
+            (points.length > 1 && isOwner()
+              ? '<button class="btn sm danger" data-disable-point="' + esc(p.點位代碼) +
+                '" data-name="' + esc(p.名稱) + '">停用</button>'
+              : '') +
+          '</td></tr>');
+      });
+    });
+
     table.innerHTML =
-      '<thead><tr><th>代碼</th><th>店名</th><th>登記公司</th><th>座標</th>' +
-      '<th class="num">半徑</th><th>狀態</th><th></th></tr></thead><tbody>' +
-      venues.map(function (v) {
-        return '<tr>' +
-          '<td class="mono">' + esc(v.店代碼) + '</td>' +
-          '<td>' + esc(v.店名) + '</td>' +
-          '<td>' + esc(v.登記公司 || '') + '</td>' +
-          '<td class="mono">' + (v.已設定座標
-            ? esc(v.緯度.toFixed(5) + ', ' + v.經度.toFixed(5))
-            : '<span class="tag crit">尚未設定</span>') + '</td>' +
-          '<td class="num">' + (v.允許半徑 || '') + ' m</td>' +
-          '<td>' + esc(v.狀態 || '') + '</td>' +
-          '<td class="actions"><button class="btn sm" data-radius="' + esc(v.店代碼) +
-            '" data-current="' + (v.允許半徑 || 120) + '" data-name="' + esc(v.店名) + '">調整半徑</button></td>' +
-          '</tr>';
-      }).join('') + '</tbody>';
+      '<thead><tr><th>代碼</th><th>店名</th><th>登記公司</th><th>打卡點</th>' +
+      '<th>座標與半徑</th><th>狀態</th><th></th></tr></thead><tbody>' +
+      rows.join('') + '</tbody>';
+
+    $('venue-note').textContent = '座標請用手機在店裡設定（打卡頁右上的設定入口），' +
+      '一間店可以設多個打卡點。半徑在這裡就能調。';
+
   } catch (err) {
     table.innerHTML = '<tbody><tr><td class="empty">' + esc(err.message) + '</td></tr></tbody>';
   }
@@ -2246,26 +2278,47 @@ $('ed-void').addEventListener('click', async function () {
   }
 });
 
-// ── 調整半徑 ──────────────────────────────────────────
+// ── 打卡點維護 ────────────────────────────────────────
 $('venue-table').addEventListener('click', async function (e) {
   const btn = e.target.closest('button');
-  if (!btn || !btn.dataset.radius) return;
+  if (!btn) return;
 
-  const input = prompt(
-    btn.dataset.name + ' 的打卡半徑（公尺）\n\n' +
-    '目前：' + btn.dataset.current + ' 公尺\n' +
-    '建議 100–150。室內訊號差的店可以放寬，但太大會失去定位意義。',
-    btn.dataset.current
-  );
-  if (input === null) return;
+  if (btn.dataset.radius) {
+    const input = prompt(
+      btn.dataset.name + ' 的打卡半徑（公尺）\n\n' +
+      '目前：' + btn.dataset.current + ' 公尺\n' +
+      '手機定位在室內誤差常有 20–50 公尺，設太小人在店裡也會打不到卡。\n' +
+      '小工作室建議 50，一般店面 80，大坪數 100。',
+      btn.dataset.current
+    );
+    if (input === null) return;
 
-  try {
-    await api('setVenueLocation', { storeCode: btn.dataset.radius, radius: Number(input) });
-    invalidateViews();
-    toast('半徑已更新');
-    loadVenues();
-  } catch (err) {
-    alert(err.message);
+    try {
+      await api('updatePunchPoint', {
+        pointCode: btn.dataset.radius,
+        params: { 允許半徑: Number(input) },
+      });
+      invalidateViews();
+      toast('半徑已更新');
+      loadVenues();
+    } catch (err) {
+      alert(err.message);
+    }
+    return;
+  }
+
+  if (btn.dataset.disablePoint) {
+    if (!confirm('停用打卡點「' + btn.dataset.name + '」？\n\n' +
+                 '這個位置之後不能再打卡，但過去的紀錄會保留。')) return;
+
+    try {
+      await api('disablePunchPoint', { pointCode: btn.dataset.disablePoint });
+      invalidateViews();
+      toast('已停用');
+      loadVenues();
+    } catch (err) {
+      alert(err.message);
+    }
   }
 });
 

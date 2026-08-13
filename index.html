@@ -478,7 +478,7 @@ function showError(title, detail) {
 // 定位
 // ─────────────────────────────────────────────
 let currentPosition = null;
-let venueInfo = null;
+let punchPoints = [];   // 這間店的所有打卡點，任一在範圍內就能打卡
 
 function requestLocation() {
   return new Promise(function (resolve, reject) {
@@ -519,6 +519,28 @@ function distanceMeters(lat1, lon1, lat2, lon2) {
   return Math.round(R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
 }
 
+/**
+ * 找出離現在位置最近的打卡點。
+ * 已經進到範圍內的點優先，其次才比距離——否則站在貳館門口
+ * 卻因為本館「數字上更近」而被說超出範圍。
+ */
+function nearestPoint(points, pos) {
+  let best = null;
+
+  points.forEach(function (p) {
+    const d = distanceMeters(pos.lat, pos.lng, p.lat, p.lng);
+    const within = d <= p.radius;
+
+    if (!best ||
+        (within && !best.within) ||
+        (within === best.within && d < best.distance)) {
+      best = { point: p, distance: d, within: within };
+    }
+  });
+
+  return best;
+}
+
 function updateLocateUI(state, text) {
   const el = document.getElementById('locate');
   el.className = 'locate' + (state ? ' ' + state : '');
@@ -534,23 +556,23 @@ async function locate() {
   try {
     currentPosition = await requestLocation();
 
-    if (venueInfo) {
-      const d = distanceMeters(
-        currentPosition.lat, currentPosition.lng,
-        venueInfo.lat, venueInfo.lng
-      );
+    if (punchPoints.length) {
+      const near = nearestPoint(punchPoints, currentPosition);
+      const label = near.point.名稱 || venueName;
 
-      if (d <= venueInfo.radius) {
-        updateLocateUI('ok', '距離' + venueName + ' <span class="m">' + d + '</span> 公尺');
+      if (near.within) {
+        updateLocateUI('ok', '距離' + label + ' <span class="m">' + near.distance + '</span> 公尺');
         btn.disabled = false;
         btn.textContent = nextAction + '打卡';
         document.getElementById('punch-hint').textContent = '';
       } else {
-        updateLocateUI('far', '距離' + venueName + ' <span class="m">' + d + '</span> 公尺，超出範圍');
+        updateLocateUI('far', '距離' + label + ' <span class="m">' + near.distance + '</span> 公尺，超出範圍');
         btn.disabled = true;
         btn.textContent = '不在打卡範圍內';
         document.getElementById('punch-hint').textContent =
-          '打卡範圍為 ' + venueInfo.radius + ' 公尺內。若你人在店裡卻顯示超出範圍，請聯繫主管';
+          label + '的打卡範圍為 ' + near.point.radius + ' 公尺內。' +
+          (punchPoints.length > 1 ? '（已比對這間店的 ' + punchPoints.length + ' 個打卡點）' : '') +
+          '若你人在店裡卻顯示超出範圍，請聯繫主管';
       }
     } else {
       updateLocateUI('ok', '已取得定位');
@@ -578,7 +600,7 @@ const WEEKDAYS = ['日', '一', '二', '三', '四', '五', '六'];
 function renderContext(ctx) {
   nextAction = ctx.下一步;
   venueName = ctx.店名;
-  venueInfo = ctx.場館座標;
+  punchPoints = (ctx.打卡點 || []).filter(function (p) { return p.lat && p.lng; });
 
   document.getElementById('punch-name').textContent = ctx.姓名;
 
@@ -615,7 +637,7 @@ function renderContext(ctx) {
 
   document.getElementById('setup-entry').style.display = ctx.可設定場館 ? '' : 'none';
 
-  if (!venueInfo) {
+  if (!punchPoints.length) {
     updateLocateUI('fail', ctx.店名 + ' 尚未設定打卡位置' + (ctx.可設定場館 ? '' : '，請聯繫主管'));
     document.getElementById('punch-btn').disabled = true;
     document.getElementById('punch-btn').textContent = '尚未設定打卡位置';
@@ -643,7 +665,9 @@ async function doPunch() {
     document.getElementById('result-icon').textContent = '✓';
     document.getElementById('result-time').textContent = result.時間;
     document.getElementById('result-type').textContent = result.類型 + '打卡完成';
-    document.getElementById('result-msg').textContent = result.訊息 || '';
+    // 一間店有多個打卡點時，把實際打在哪裡講清楚，員工才知道系統認的是哪一館
+    document.getElementById('result-msg').textContent =
+      [result.地點, result.訊息].filter(Boolean).join(' · ');
 
     const hoursEl = document.getElementById('result-hours');
     if (result.類型 === '下班' && result.今日時數) {
@@ -738,76 +762,156 @@ async function loadSetupScreen() {
     document.getElementById('setup-locate-text').textContent = err.message;
   }
 
+  await refreshSetupList();
+}
+
+async function refreshSetupList() {
   try {
-    const venues = await api('listVenuesForSetup', { idToken: idToken });
-    renderSetupVenues(venues);
+    const stores = await api('listPunchPointsForSetup', { idToken: idToken });
+    renderSetupStores(stores);
   } catch (err) {
     document.getElementById('setup-venues').innerHTML =
       '<div class="empty">' + err.message + '</div>';
   }
 }
 
-function renderSetupVenues(venues) {
+/**
+ * 一間店可以有好幾個打卡點（景安店的本館與貳館）。
+ * 每個點各自設半徑——工作室三十坪，跟兩百八十坪的南華不該用同一個容忍範圍。
+ */
+function renderSetupStores(stores) {
   const container = document.getElementById('setup-venues');
 
-  container.innerHTML = venues.map(function (v) {
-    let status;
-    if (!v.已設定座標) {
-      status = '<span style="color:var(--crit)">尚未設定</span>';
-    } else if (setupPosition) {
-      const d = distanceMeters(setupPosition.lat, setupPosition.lng, v.緯度, v.經度);
-      const inRange = d <= v.允許半徑;
-      status = '<span style="color:' + (inRange ? 'var(--ok)' : 'var(--ink-2)') + '">距離 ' +
-               d + ' 公尺</span>';
-    } else {
-      status = '<span style="color:var(--ink-2)">已設定</span>';
-    }
+  container.innerHTML = stores.map(function (s) {
+    const points = s.打卡點 || [];
 
-    return '<div class="log-row" style="grid-template-columns:1fr auto">' +
-      '<div><div style="font-weight:650">' + v.店名 + '</div>' +
-      '<div style="font-size:0.8rem">' + status +
-      ' · 半徑 ' + v.允許半徑 + ' 公尺</div></div>' +
-      '<button class="btn" data-store="' + v.店代碼 + '" data-name="' + v.店名 +
-      '" style="padding:0.5rem 0.8rem; font-size:0.85rem">設為此處</button>' +
+    const rows = points.length
+      ? points.map(function (p) {
+          let status;
+          if (!p.已設定座標) {
+            status = '<span style="color:var(--crit)">尚未設定座標</span>';
+          } else if (setupPosition) {
+            const d = distanceMeters(setupPosition.lat, setupPosition.lng, p.緯度, p.經度);
+            status = '<span style="color:' + (d <= p.允許半徑 ? 'var(--ok)' : 'var(--ink-2)') +
+                     '">距離 ' + d + ' 公尺</span>';
+          } else {
+            status = '<span style="color:var(--ink-2)">已設定</span>';
+          }
+
+          return '<div class="log-row" style="grid-template-columns:1fr auto">' +
+            '<div><div style="font-weight:650">' + esc(p.名稱) + '</div>' +
+            '<div style="font-size:0.8rem">' + status + ' · 半徑 ' + p.允許半徑 + ' 公尺</div></div>' +
+            '<button class="btn" data-point="' + esc(p.點位代碼) +
+            '" data-store="' + esc(s.店代碼) + '" data-name="' + esc(p.名稱) +
+            '" data-radius="' + p.允許半徑 +
+            '" style="padding:0.5rem 0.8rem; font-size:0.85rem">設為此處</button>' +
+            '</div>';
+        }).join('')
+      : '<div class="log-row" style="font-size:0.85rem; color:var(--ink-2)">' +
+        '這間店還沒有打卡點</div>';
+
+    return '<div style="margin-bottom:1.1rem">' +
+      '<div style="font-weight:700; margin-bottom:0.35rem">' + esc(s.店名) + '</div>' +
+      rows +
+      '<button class="btn" data-add="' + esc(s.店代碼) + '" data-store-name="' + esc(s.店名) +
+      '" style="margin-top:0.4rem; padding:0.5rem 0.8rem; font-size:0.85rem">' +
+      '＋ 在這裡新增打卡點</button>' +
       '</div>';
   }).join('');
 
-  container.querySelectorAll('button[data-store]').forEach(function (btn) {
-    btn.addEventListener('click', function () { applyVenueLocation(btn); });
+  container.querySelectorAll('button[data-point]').forEach(function (btn) {
+    btn.addEventListener('click', function () { updatePointHere(btn); });
+  });
+  container.querySelectorAll('button[data-add]').forEach(function (btn) {
+    btn.addEventListener('click', function () { addPointHere(btn); });
   });
 }
 
-async function applyVenueLocation(btn) {
+function esc(s) {
+  return String(s === null || s === undefined ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+/** 詢問半徑。取消回傳 null，代表沿用原本的設定。 */
+function askRadius(current) {
+  const input = prompt(
+    '打卡範圍半徑（公尺）\n\n' +
+    '手機定位在室內通常有 20 到 50 公尺誤差，設太小人在店裡也會打不到卡。\n' +
+    '小工作室建議 50，一般店面 80，大坪數 100。',
+    String(current || 80)
+  );
+  if (input === null) return null;
+
+  const n = Number(input);
+  if (!n || n < 20 || n > 200) {
+    alert('半徑請填 20 到 200 之間的數字');
+    return undefined;   // 明確表示輸入無效，呼叫端要中止
+  }
+  return n;
+}
+
+async function updatePointHere(btn) {
   if (!setupPosition) {
     document.getElementById('setup-hint').textContent = '還沒取得定位，請先允許位置權限再試';
     return;
   }
 
-  const storeName = btn.dataset.name;
-  if (!confirm('要把「' + storeName + '」的打卡位置設成你現在的位置嗎？\n\n原本的設定會被覆蓋。')) {
+  const name = btn.dataset.name;
+  if (!confirm('要把「' + name + '」的座標改成你現在的位置嗎？\n\n原本的設定會被覆蓋。')) return;
+
+  const radius = askRadius(btn.dataset.radius);
+  if (radius === undefined) return;
+
+  await savePoint(btn, {
+    storeCode: btn.dataset.store,
+    pointCode: btn.dataset.point,
+    location: setupPosition,
+    radius: radius,
+  }, '設為此處');
+}
+
+async function addPointHere(btn) {
+  if (!setupPosition) {
+    document.getElementById('setup-hint').textContent = '還沒取得定位，請先允許位置權限再試';
     return;
   }
 
+  const storeName = btn.dataset.storeName;
+  const name = prompt(
+    '這個打卡點叫什麼？\n\n取好認的名字，員工打卡成功時會看到。',
+    storeName
+  );
+  if (name === null || !name.trim()) return;
+
+  const radius = askRadius(80);
+  if (radius === undefined) return;
+
+  await savePoint(btn, {
+    storeCode: btn.dataset.add,
+    name: name.trim(),
+    location: setupPosition,
+    radius: radius,
+  }, '＋ 在這裡新增打卡點');
+}
+
+async function savePoint(btn, params, label) {
   btn.disabled = true;
   btn.textContent = '設定中…';
 
   try {
-    const result = await api('setVenueLocationByLine', {
-      idToken: idToken,
-      storeCode: btn.dataset.store,
-      location: setupPosition,
-    });
+    const result = await api('savePunchPointByLine', { idToken: idToken, params: params });
 
     document.getElementById('setup-hint').textContent =
-      result.店名 + ' 的打卡位置已更新，半徑 ' + result.允許半徑 + ' 公尺';
+      result.店名 + ' 的「' + result.名稱 + '」已' + (result.新增 ? '新增' : '更新') +
+      '，半徑 ' + result.允許半徑 + ' 公尺';
 
-    const venues = await api('listVenuesForSetup', { idToken: idToken });
-    renderSetupVenues(venues);
+    await refreshSetupList();
 
   } catch (err) {
     document.getElementById('setup-hint').textContent = err.message;
     btn.disabled = false;
-    btn.textContent = '設為此處';
+    btn.textContent = label;
   }
 }
 
