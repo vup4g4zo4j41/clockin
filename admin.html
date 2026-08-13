@@ -2126,8 +2126,12 @@ async function loadVenues() {
       const blankCell = '<td></td><td></td><td></td>';
 
       if (!points.length) {
-        rows.push('<tr>' + storeCell +
-          '<td colspan="2"><span class="tag crit">尚未設定打卡點</span></td>' +
+        // 已併入的舊店代碼本來就不該有打卡點，不要對它跳紅字
+        const merged = v.狀態 === '已併入';
+        rows.push('<tr' + (merged ? ' style="opacity:0.55"' : '') + '>' + storeCell +
+          '<td colspan="2">' + (merged
+            ? '<span class="tag mute">已併入其他店，不再使用</span>'
+            : '<span class="tag crit">尚未設定打卡點</span>') + '</td>' +
           '<td>' + esc(v.狀態 || '') + '</td><td class="actions"></td></tr>');
         return;
       }
