@@ -565,6 +565,22 @@
   </div>
 </div>
 
+<!-- 註冊連結 -->
+<div class="overlay" id="modal-invite">
+  <div class="modal">
+    <h2>註冊連結</h2>
+    <div class="invite-result">
+      <strong id="mi-who">—</strong>
+      <span style="font-size:0.82rem" id="mi-note"></span>
+      <div class="url" id="mi-url"></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn" data-close>關閉</button>
+      <button class="btn primary" id="mi-copy">複製連結</button>
+    </div>
+  </div>
+</div>
+
 <!-- 代員工建立假單 -->
 <div class="overlay" id="modal-leave">
   <div class="modal">
@@ -1205,7 +1221,8 @@ async function loadEmployees() {
 
         // 重發連結：店長可以重發自己店的員工，但主管的連結只有最高權限能重發
         if (e.狀態 === '待註冊' && (isOwner() || e.角色 === '員工')) {
-          actions += '<button class="btn sm" data-reissue="' + esc(e.員工編號) + '">重發連結</button>';
+          actions += '<button class="btn sm" data-reissue="' + esc(e.員工編號) +
+                     '" data-name="' + esc(e.姓名) + '">重發連結</button>';
         }
 
         // 停用與復職一律只限最高權限——這是離職把關點，不下放
@@ -2382,6 +2399,51 @@ async function loadAudit() {
 }
 
 // ── 對話框控制 ────────────────────────────────────────
+// ── 註冊連結 ──────────────────────────────────────────
+const LIFF_BASE = 'https://liff.line.me/2011083590-EXsGOSUJ?token=';
+let currentInviteUrl = '';
+
+/** 顯示註冊連結。一定要看得到——只複製不顯示的話，複製失敗連結就沒了。 */
+function showInviteLink(name, token, expiry) {
+  currentInviteUrl = LIFF_BASE + token;
+  $('mi-who').textContent = name ? name + ' 的註冊連結' : '註冊連結';
+  $('mi-note').textContent = '把連結傳給他，用手機 LINE 開啟即可完成註冊。' +
+    '連結用過就失效' + (expiry ? '，' + expiry + ' 前有效' : '') + '。';
+  $('mi-url').textContent = currentInviteUrl;
+  openModal('modal-invite');
+}
+
+/**
+ * 複製文字。
+ *
+ * navigator.clipboard 只在使用者剛按下時才允許寫入，隔了一次網路往返
+ * 就會被擋，所以複製一律綁在按鈕的當下，並保留舊 API 當退路。
+ */
+async function copyText(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+    toast('已複製');
+    return;
+  } catch (e) { /* 換退路 */ }
+
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  ta.style.position = 'fixed';
+  ta.style.opacity = '0';
+  document.body.appendChild(ta);
+  ta.select();
+
+  try {
+    document.execCommand('copy');
+    toast('已複製');
+  } catch (e) {
+    toast('複製失敗，請直接選取上面的連結');
+  }
+  document.body.removeChild(ta);
+}
+
+$('mi-copy').addEventListener('click', function () { copyText(currentInviteUrl); });
+
 function openModal(id) { $(id).classList.add('show'); }
 function closeModal(id) { $(id).classList.remove('show'); }
 
@@ -2430,7 +2492,7 @@ $('ne-submit').addEventListener('click', async function () {
       },
     });
 
-    const url = 'https://liff.line.me/2011083590-EXsGOSUJ?token=' + result.token;
+    const url = LIFF_BASE + result.token;
     $('ne-result').innerHTML =
       '<div class="invite-result">' +
       '<strong>' + esc(result.姓名) + '（' + esc(result.員工編號) + '）已建立</strong>' +
@@ -2442,9 +2504,7 @@ $('ne-submit').addEventListener('click', async function () {
     $('ne-result').classList.remove('hidden');
     btn.classList.add('hidden');
 
-    $('copy-invite').addEventListener('click', function () {
-      navigator.clipboard.writeText(url).then(function () { toast('已複製'); });
-    });
+    $('copy-invite').addEventListener('click', function () { copyText(url); });
 
     loadEmployees();
 
@@ -2477,9 +2537,10 @@ $('emp-table').addEventListener('click', async function (e) {
     }
     if (btn.dataset.reissue) {
       const result = await api('reissueInvite', { employeeId: btn.dataset.reissue });
-      const url = 'https://liff.line.me/2011083590-EXsGOSUJ?token=' + result.token;
-      await navigator.clipboard.writeText(url);
-      toast('新連結已複製到剪貼簿');
+      // 連結一定要顯示出來。等後端回應要一到三秒，那之後瀏覽器
+      // 已經不把這當成使用者主動觸發，直接寫剪貼簿會被擋掉，
+      // 連結就這樣沒了——舊的做法只複製不顯示，失敗等於整條連結遺失。
+      showInviteLink(btn.dataset.name || '', result.token, result.到期時間);
     }
   } catch (err) {
     alert(err.message);
