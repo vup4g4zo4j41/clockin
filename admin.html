@@ -176,6 +176,8 @@
   .tag.crit { background: var(--crit-soft); color: var(--crit); }
   .tag.info { background: var(--accent-soft); color: var(--accent); }
   .tag.mute { background: var(--surface-2); color: var(--muted); }
+  /* 次數旁邊的累計分鐘，比次數低一階 */
+  td .sub { font-size: 0.8rem; color: var(--muted); white-space: nowrap; }
 
   .empty { padding: 2.5rem 1rem; text-align: center; color: var(--muted); font-size: 0.9rem; }
 
@@ -1042,6 +1044,18 @@ async function loadMonthly() {
       return;
     }
 
+    // 次數旁邊直接寫累計分鐘。遲到 3 次可能是 3 分鐘也可能是兩小時，
+    // 只看次數看不出嚴重程度。超過一小時改用時分表示。
+    const countWithMinutes = function (count, minutes) {
+      if (!count) return '0';
+      const m = Number(minutes) || 0;
+      const text = m >= 60
+        ? Math.floor(m / 60) + ' 小時' + (m % 60 ? ' ' + (m % 60) + ' 分' : '')
+        : m + ' 分';
+      return '<span class="tag warn">' + count + '</span>' +
+             (m > 0 ? ' <span class="sub">' + text + '</span>' : '');
+    };
+
     table.innerHTML =
       '<thead><tr><th>姓名</th><th>店</th><th class="num">出勤天數</th><th class="num">總時數</th>' +
       '<th class="num">遲到</th><th class="num">早退</th><th class="num">缺卡</th>' +
@@ -1052,8 +1066,8 @@ async function loadMonthly() {
           '<td>' + esc(storeName(r.店代碼)) + '</td>' +
           '<td class="num">' + r.出勤天數 + '</td>' +
           '<td class="num">' + r.總時數 + '</td>' +
-          '<td class="num">' + (r.遲到次數 ? '<span class="tag warn">' + r.遲到次數 + '</span>' : '0') + '</td>' +
-          '<td class="num">' + (r.早退次數 ? '<span class="tag warn">' + r.早退次數 + '</span>' : '0') + '</td>' +
+          '<td class="num">' + countWithMinutes(r.遲到次數, r.遲到分鐘) + '</td>' +
+          '<td class="num">' + countWithMinutes(r.早退次數, r.早退分鐘) + '</td>' +
           '<td class="num">' + (r.缺卡天數 ? '<span class="tag crit">' + r.缺卡天數 + '</span>' : '0') + '</td>' +
           '<td class="num">' + r.請假時數 + '</td>' +
           '<td>' + (r.狀態 === '在職' ? '' : '<span class="tag mute">' + esc(r.狀態) + '</span>') + '</td>' +
@@ -1070,10 +1084,11 @@ $('monthly-reload').addEventListener('click', loadMonthly);
 $('btn-export').addEventListener('click', function () {
   if (!monthlyData || !monthlyData.明細.length) { toast('沒有資料可以匯出'); return; }
 
-  const headers = ['員工編號', '姓名', '店', '出勤天數', '總時數', '遲到次數', '早退次數', '缺卡天數', '請假時數'];
+  const headers = ['員工編號', '姓名', '店', '出勤天數', '總時數',
+                   '遲到次數', '遲到分鐘', '早退次數', '早退分鐘', '缺卡天數', '請假時數'];
   const rows = monthlyData.明細.map(function (r) {
     return [r.員工編號, r.姓名, storeName(r.店代碼), r.出勤天數, r.總時數,
-            r.遲到次數, r.早退次數, r.缺卡天數, r.請假時數];
+            r.遲到次數, r.遲到分鐘 || 0, r.早退次數, r.早退分鐘 || 0, r.缺卡天數, r.請假時數];
   });
 
   const csv = [headers].concat(rows).map(function (row) {
