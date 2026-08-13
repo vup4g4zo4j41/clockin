@@ -15,6 +15,7 @@
     --rule:     #DDE4E9;
     --accent:   #1F5E6B;
     --accent-d: #164851;
+    --accent-soft: #E6EDF0;
     --ok:       #2E7D5B;
     --ok-soft:  #E4F1EA;
     --warn:     #B87A1E;
@@ -138,8 +139,8 @@
   .tag.ok   { background: var(--ok-soft);   color: var(--ok); }
   .tag.warn { background: var(--warn-soft); color: var(--warn); }
   .tag.crit { background: var(--crit-soft); color: var(--crit); }
-  .tag.info { background: #E6EDF0; color: var(--accent); }
-  .tag.mute { background: #E6EDF0; color: var(--muted); }
+  .tag.info { background: var(--accent-soft); color: var(--accent); }
+  .tag.mute { background: var(--accent-soft); color: var(--muted); }
 
   /* ── 結果畫面 ── */
   #screen-result { align-items: center; justify-content: center; text-align: center; gap: 0.5rem; }
@@ -254,6 +255,22 @@
 
   .section-title { font-size: 0.85rem; color: var(--ink-2); font-weight: 650; margin-top: 0.4rem; }
 
+  /* ── 我的班表 ── */
+  .month-nav { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; }
+  .month-nav button {
+    font-family: inherit; font-size: 0.85rem; font-weight: 600;
+    padding: 0.5rem 0.8rem; border: 1px solid var(--rule); border-radius: 8px;
+    background: var(--surface); color: var(--ink-2); cursor: pointer;
+  }
+  .month-nav span { font-size: 1rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+
+  #shifts-log .log-row { grid-template-columns: 3.4rem 1fr auto; }
+  #shifts-log .t { display: flex; align-items: baseline; gap: 0.3rem; font-size: 1.05rem; font-weight: 700; }
+  #shifts-log .t .wd { font-size: 0.75rem; font-weight: 500; color: var(--muted); font-family: var(--sans); }
+  .shift-name { font-weight: 650; }
+  /* 今天那列要一眼認出來，不然員工得自己數到第幾行 */
+  .log-row.is-today { background: var(--accent-soft); }
+
   /* 請整天 / 指定時段 */
   .seg { display: flex; border: 1px solid var(--rule); border-radius: 10px; overflow: hidden; }
   .seg button {
@@ -297,10 +314,10 @@
       --warn-soft:#33280F;
       --crit:     #E07A6E;
       --crit-soft:#351E1C;
+      --accent-soft: #1C2E36;
     }
     .punch-btn { color: #0C1418; }
     .btn.primary { color: #0C1418; }
-    .tag.info { background: #1C2E36; }
     .punch-btn:disabled { background: #3A4A55; color: #7A8B98; }
   }
 </style>
@@ -388,6 +405,27 @@
     </div>
 
     <div class="log" id="records-log"></div>
+  </div>
+
+  <!-- 我的班表 -->
+  <div class="screen" id="screen-shifts">
+    <div class="header">
+      <div class="name">我的班表</div>
+      <div class="sub" id="shifts-sub">—</div>
+    </div>
+
+    <div class="month-nav">
+      <button type="button" id="sh-prev">‹ 上個月</button>
+      <span id="sh-month">—</span>
+      <button type="button" id="sh-next">下個月 ›</button>
+    </div>
+
+    <div class="summary">
+      <div><div class="k">上班天數</div><div class="v" id="sh-days">—</div></div>
+      <div><div class="k">預計時數</div><div class="v" id="sh-hours">—</div></div>
+    </div>
+
+    <div class="log" id="shifts-log"></div>
   </div>
 
   <!-- 請假 -->
@@ -493,6 +531,7 @@
   <!-- 底部分頁 -->
   <div class="tabs" id="tabs" style="display:none">
     <button data-tab="punch" class="active">打卡</button>
+    <button data-tab="shifts">班表</button>
     <button data-tab="records">我的紀錄</button>
     <button data-tab="leave">請假</button>
   </div>
@@ -1032,6 +1071,68 @@ async function savePoint(btn, params, label) {
 }
 
 // ─────────────────────────────────────────────
+// 我的班表
+// ─────────────────────────────────────────────
+let shiftsMonth = null;
+
+function addMonths(ym, n) {
+  const y = Number(ym.slice(0, 4));
+  const m = Number(ym.slice(5, 7)) + n;
+  const d = new Date(y, m - 1, 1);
+  return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2);
+}
+
+async function loadMyShifts(month) {
+  show('shifts');
+  shiftsMonth = month || shiftsMonth || new Date().toISOString().slice(0, 7);
+  document.getElementById('sh-month').textContent = shiftsMonth.replace('-', ' 年 ') + ' 月';
+  document.getElementById('shifts-log').innerHTML = '<div class="empty">載入中…</div>';
+
+  try {
+    const data = await api('getMySchedule', { idToken: idToken, month: shiftsMonth });
+
+    document.getElementById('shifts-sub').textContent = data.姓名;
+    document.getElementById('sh-days').textContent = data.上班天數;
+    document.getElementById('sh-hours').textContent = data.預計時數;
+
+    // 沒排到的日子不列出來，整頁只剩自己有事的那幾天，手機上好掃
+    const rows = data.明細.filter(function (d) { return d.班別代碼; });
+
+    if (!rows.length) {
+      document.getElementById('shifts-log').innerHTML =
+        '<div class="empty">這個月還沒有排班</div>';
+      return;
+    }
+
+    document.getElementById('shifts-log').innerHTML = rows.map(function (d) {
+      const day = Number(d.日期.slice(8, 10));
+      const time = d.休假 ? '' : d.上班時間 + ' – ' + d.下班時間;
+
+      return '<div class="log-row' + (d.今天 ? ' is-today' : '') + '">' +
+        '<span class="t">' + ('0' + day).slice(-2) + '<span class="wd">' +
+          WEEKDAYS[d.星期] + '</span></span>' +
+        '<span>' + (d.休假
+          ? '<span class="tag mute">' + esc(d.班別名稱) + '</span>'
+          : '<span class="shift-name">' + esc(d.班別名稱) + '</span>' +
+            '<span class="d"> ' + esc(time) + '</span>') + '</span>' +
+        '<span class="h">' + (d.休假 ? '' : d.時數 + ' 小時') + '</span>' +
+        '</div>';
+    }).join('');
+
+  } catch (err) {
+    document.getElementById('shifts-log').innerHTML =
+      '<div class="empty">' + esc(err.message) + '</div>';
+  }
+}
+
+document.getElementById('sh-prev').addEventListener('click', function () {
+  loadMyShifts(addMonths(shiftsMonth, -1));
+});
+document.getElementById('sh-next').addEventListener('click', function () {
+  loadMyShifts(addMonths(shiftsMonth, 1));
+});
+
+// ─────────────────────────────────────────────
 // 請假
 // ─────────────────────────────────────────────
 let leaveData = null;
@@ -1302,6 +1403,8 @@ document.getElementById('tabs').addEventListener('click', function (e) {
     loadPunchScreen().catch(function (err) { showError('無法載入', err.message); });
   } else if (btn.dataset.tab === 'leave') {
     loadLeaveScreen();
+  } else if (btn.dataset.tab === 'shifts') {
+    loadMyShifts();
   } else {
     loadRecords();
   }
