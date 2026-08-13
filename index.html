@@ -488,7 +488,13 @@ async function api(action, params, attempt) {
 
   // Apps Script 的轉址偶爾會掉（表現為 404）。查詢類的自動重試，
   // 但打卡本身不重試——萬一是回應遺失而非請求失敗，重試會打成兩筆。
-  const canRetry = /^get/.test(action) && attempt < 3;
+  // get 與 list 開頭的都是唯讀動作，重試不會產生副作用。
+  const canRetry = /^(get|list)/.test(action) && attempt < 3;
+
+  // fetch 本身沒有逾時。行動網路訊號不穩時連線會一直掛著不回應，
+  // 畫面就永遠停在「載入中」——寧可失敗給個明確訊息，也不要無限等待。
+  const controller = new AbortController();
+  const timer = setTimeout(function () { controller.abort(); }, 25000);
 
   let response;
   try {
@@ -497,13 +503,18 @@ async function api(action, params, attempt) {
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
       body: JSON.stringify(Object.assign({ action: action }, params || {})),
       redirect: 'follow',
+      signal: controller.signal,
     });
   } catch (netErr) {
     if (canRetry) {
       await new Promise(function (r) { setTimeout(r, 600 * attempt); });
       return api(action, params, attempt + 1);
     }
-    throw new Error('連線中斷，請確認網路後再試一次');
+    throw new Error(netErr.name === 'AbortError'
+      ? '等太久沒有回應，請確認網路訊號後再試一次'
+      : '連線中斷，請確認網路後再試一次');
+  } finally {
+    clearTimeout(timer);
   }
 
   if (!response.ok) {
@@ -816,27 +827,36 @@ async function loadSetupScreen() {
   locateEl.className = 'locate';
   document.getElementById('setup-locate-text').textContent = '定位中…';
 
-  try {
-    setupPosition = await requestLocation();
+  // 定位與清單分開跑。定位在室內可能要等十幾秒甚至失敗，
+  // 但那不該讓打卡點清單也一起卡住——清單先出來，人才知道系統是活的。
+  const locating = requestLocation().then(function (pos) {
+    setupPosition = pos;
     locateEl.className = 'locate ok';
     document.getElementById('setup-locate-text').innerHTML =
-      '已取得位置，精度 <span class="m">' + Math.round(setupPosition.accuracy) + '</span> 公尺';
-  } catch (err) {
+      '已取得位置，精度 <span class="m">' + Math.round(pos.accuracy) + '</span> 公尺';
+  }).catch(function (err) {
     setupPosition = null;
     locateEl.className = 'locate fail';
     document.getElementById('setup-locate-text').textContent = err.message;
-  }
+  });
 
   await refreshSetupList();
+
+  // 定位比清單晚回來的話，距離要補算上去。用手上的資料重畫就好，
+  // 不用再打一次後端——每次呼叫都要等一到三秒。
+  await locating;
+  if (setupStores) renderSetupStores(setupStores);
 }
+
+let setupStores = null;
 
 async function refreshSetupList() {
   try {
-    const stores = await api('listPunchPointsForSetup', { idToken: idToken });
-    renderSetupStores(stores);
+    setupStores = await api('listPunchPointsForSetup', { idToken: idToken });
+    renderSetupStores(setupStores);
   } catch (err) {
     document.getElementById('setup-venues').innerHTML =
-      '<div class="empty">' + err.message + '</div>';
+      '<div class="empty">' + esc(err.message) + '</div>';
   }
 }
 

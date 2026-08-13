@@ -834,6 +834,11 @@ async function api(action, params, attempt) {
   const body = Object.assign({ action: action }, params || {});
   if (session && session.token) body.sessionToken = session.token;
 
+  // fetch 本身沒有逾時，連線掛著不回應時畫面會永遠停在「載入中」。
+  // 寧可失敗給個明確訊息，也不要無限等待。
+  const controller = new AbortController();
+  const timer = setTimeout(function () { controller.abort(); }, 40000);
+
   let res;
   try {
     res = await fetch(API_URL, {
@@ -841,13 +846,18 @@ async function api(action, params, attempt) {
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
       body: JSON.stringify(body),
       redirect: 'follow',
+      signal: controller.signal,
     });
   } catch (netErr) {
     if (isReadOnly(action) && attempt < 3) {
       await sleep(600 * attempt);
       return api(action, params, attempt + 1);
     }
-    throw new Error('連線中斷，請檢查網路後再試一次');
+    throw new Error(netErr.name === 'AbortError'
+      ? '等太久沒有回應，請再按一次'
+      : '連線中斷，請檢查網路後再試一次');
+  } finally {
+    clearTimeout(timer);
   }
 
   if (!res.ok) {
