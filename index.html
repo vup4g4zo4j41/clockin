@@ -1180,12 +1180,20 @@ function renderLeaveBalance(balances) {
         // 用假別代碼當標題（特休、病假），不用全名（特別休假、普通傷病假）——
         // 全名在四格並排的手機版面會折行，把數字擠歪
         // 生理假是每月重算的，不寫清楚會被當成年度額度
-        const unit = b.額度類型 === '每月' ? '小時（本月）' : '小時可用';
+        const unit = b.額度類型 === '每月' ? '天（本月）' : '天可用';
         return '<div><div class="k">' + esc(b.假別代碼 || b.名稱) + '</div>' +
-          '<div class="v">' + b.剩餘時數 + '</div>' +
+          '<div class="v">' + formatDays(b.剩餘天數) + '</div>' +
           '<div class="k">' + unit + '</div></div>';
       }).join('')
     : '';
+}
+
+/**
+ * 天數顯示。整數不帶小數點，請過半天顯示 14.5，
+ * 請過零頭小時才會出現 14.75——照實給，不修飾成看起來整齊的數字。
+ */
+function formatDays(days) {
+  return String(Math.round((Number(days) || 0) * 100) / 100);
 }
 
 function renderLeaveTypes(types) {
