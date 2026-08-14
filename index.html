@@ -1163,10 +1163,16 @@ async function loadLeaveScreen() {
   }
 }
 
-/** 只顯示有額度可追蹤的假別，其他（喪假、公假等）沒有餘額概念，列出來只是噪音。 */
+/**
+ * 員工端只顯示特休餘額。
+ *
+ * 病假、事假、生理假的額度系統照樣在算、後台也查得到，
+ * 但員工看到一整排數字容易誤會成「可以用掉的福利」。
+ * 特休是真的屬於他的，其他是有事才請。
+ */
 function renderLeaveBalance(balances) {
   const tracked = (balances || []).filter(function (b) {
-    return b.追蹤餘額 && b.剩餘時數 !== null;
+    return b.假別代碼 === '特休' && b.剩餘時數 !== null;
   });
 
   document.getElementById('leave-balance').innerHTML = tracked.length
