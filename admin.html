@@ -1794,6 +1794,26 @@ function renderImportPreview(entries, matched, unknownNames, unknownShifts) {
     html += '<div class="msg ok">可匯入 <strong>' + entries.length + '</strong> 筆　·　' +
             Object.keys(matched).length + ' 人　·　' +
             dates[0] + ' ～ ' + dates[dates.length - 1] + '</div>';
+
+    // Excel 檔常常是從去年的檔案改的，日期還留著舊年份。
+    // 匯進去之後資料是對的、店代碼也對，但班表停在另一年，畫面上一片空白，
+    // 從結果很難看出問題出在哪——所以在匯入前就先擋下來問清楚。
+    const target = $('sched-month').value;
+    const offMonth = entries.filter(function (e) {
+      return e.date.slice(0, 7) !== target;
+    }).length;
+
+    if (target && offMonth) {
+      html += '<div class="msg" style="background:var(--crit-soft);color:var(--crit);margin-top:0.6rem">' +
+        '<strong>日期跟你選的月份對不上</strong><br>' +
+        '畫面上選的是 <strong>' + esc(target) + '</strong>，但檔案裡有 ' + offMonth +
+        ' 筆不是這個月（' + esc(dates[0]) + ' ～ ' + esc(dates[dates.length - 1]) + '）。<br>' +
+        '<span style="font-size:0.82rem">常見原因是這份 Excel 從去年的檔案改的，日期還留著舊年份。' +
+        '照這樣匯入資料會進到別的月份，班表看起來會是空的。</span><br>' +
+        '<button class="btn sm" id="btn-remap-month" style="margin-top:0.5rem">' +
+        '把日期改成 ' + esc(target) + ' 再匯入</button>' +
+        '</div>';
+    }
   } else {
     html += '<div class="msg err">沒有解析出任何可匯入的資料</div>';
   }
@@ -1817,6 +1837,28 @@ function renderImportPreview(entries, matched, unknownNames, unknownShifts) {
   }
 
   preview.innerHTML = html;
+
+  const remapBtn = $('btn-remap-month');
+  if (remapBtn) {
+    remapBtn.addEventListener('click', function () {
+      const target = $('sched-month').value;
+      const lastDay = new Date(Number(target.slice(0, 4)), Number(target.slice(5, 7)), 0).getDate();
+
+      // 只換年月、保留日，所以 8/31 這種日子在只有 30 天的月份會被丟掉
+      const dropped = [];
+      parsedImport.entries = parsedImport.entries.filter(function (e) {
+        if (Number(e.date.slice(8, 10)) > lastDay) { dropped.push(e.date); return false; }
+        e.date = target + e.date.slice(7);
+        return true;
+      });
+
+      toast(dropped.length
+        ? '已改為 ' + target + '，' + dropped.length + ' 筆超出該月天數已略過'
+        : '已改為 ' + target);
+
+      renderImportPreview(parsedImport.entries, matched, unknownNames, unknownShifts);
+    });
+  }
 
   if (missShifts.length) {
     $('btn-create-shifts').addEventListener('click', async function () {
