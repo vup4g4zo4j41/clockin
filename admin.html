@@ -1349,7 +1349,12 @@ function renderSchedule(range) {
     const pending = e.已註冊 === false
       ? ' <span class="tag warn" style="font-size:0.62rem" title="尚未用 LINE 註冊，目前無法打卡">未註冊</span>'
       : '';
-    body += '<tr><td class="emp">' + esc(e.姓名) + pending + '</td>';
+    // 本人隸屬別店，只是被排到這間店的班——標出來才不會以為資料錯了
+    const helping = e.支援
+      ? ' <span class="tag info" style="font-size:0.62rem" title="所屬店為' +
+        esc(storeName(e.所屬店)) + '，來支援這間店">支援</span>'
+      : '';
+    body += '<tr><td class="emp">' + esc(e.姓名) + pending + helping + '</td>';
 
     dates.forEach(function (d) {
       const wd = new Date(d + 'T12:00:00+08:00').getDay();
