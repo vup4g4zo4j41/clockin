@@ -1152,7 +1152,7 @@ async function loadLeaveScreen() {
 
   try {
     leaveData = await api('getLeaveFormData', { idToken: idToken });
-    renderLeaveBalance(leaveData.餘額);
+    renderLeaveBalance(leaveData.餘額, leaveData.角色);
     renderLeaveTypes(leaveData.假別);
     renderMyLeaves(leaveData.假單);
     document.getElementById('leave-sub').textContent =
@@ -1164,15 +1164,20 @@ async function loadLeaveScreen() {
 }
 
 /**
- * 員工端只顯示特休餘額。
+ * 餘額卡片。
  *
- * 病假、事假、生理假的額度系統照樣在算、後台也查得到，
- * 但員工看到一整排數字容易誤會成「可以用掉的福利」。
+ * 一般員工只看得到特休——看到一整排數字容易誤會成「可以用掉的福利」，
  * 特休是真的屬於他的，其他是有事才請。
+ * 主管看得到全部，因為他們要自己掌握手上還有多少可用。
+ *
+ * 不管顯示與否，額度在後端照樣計算，超額一樣擋。
  */
-function renderLeaveBalance(balances) {
+function renderLeaveBalance(balances, role) {
+  const isManager = role === '店長' || role === '最高權限';
+
   const tracked = (balances || []).filter(function (b) {
-    return b.假別代碼 === '特休' && b.剩餘時數 !== null;
+    if (b.剩餘時數 === null) return false;
+    return isManager ? b.追蹤餘額 : b.假別代碼 === '特休';
   });
 
   document.getElementById('leave-balance').innerHTML = tracked.length
@@ -1287,7 +1292,7 @@ document.getElementById('lv-submit').addEventListener('click', async function ()
     document.getElementById('lv-reason').value = '';
 
     leaveData = await api('getLeaveFormData', { idToken: idToken });
-    renderLeaveBalance(leaveData.餘額);
+    renderLeaveBalance(leaveData.餘額, leaveData.角色);
     renderMyLeaves(leaveData.假單);
 
   } catch (err) {
