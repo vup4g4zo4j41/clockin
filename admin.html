@@ -565,6 +565,55 @@
   </div>
 </div>
 
+<!-- 編輯員工 -->
+<div class="overlay" id="modal-edit-employee">
+  <div class="modal">
+    <h2 id="ee-title">編輯員工</h2>
+    <div class="field">
+      <label for="ee-name">姓名（英文）</label>
+      <input type="text" id="ee-name">
+      <span class="hint">要跟 Excel 班表上的名字一致，匯入班表才對得上人</span>
+    </div>
+    <div class="field">
+      <label for="ee-cname">中文姓名</label>
+      <input type="text" id="ee-cname">
+    </div>
+    <div class="field">
+      <label for="ee-store">所屬店</label>
+      <select id="ee-store"></select>
+    </div>
+    <div class="field">
+      <label for="ee-role">身分</label>
+      <select id="ee-role">
+        <option value="員工">員工</option>
+        <option value="店長">店長</option>
+        <option value="最高權限">最高權限</option>
+      </select>
+      <span class="hint" id="ee-role-hint"></span>
+    </div>
+    <div class="field">
+      <label for="ee-hire">到職日</label>
+      <input type="date" id="ee-hire">
+    </div>
+    <div class="field">
+      <label for="ee-annual">特休天數調整</label>
+      <input type="number" id="ee-annual" min="0" max="30" step="0.5" placeholder="留空＝依到職日自動計算">
+      <span class="hint">填了就以這個天數為準，覆蓋系統依年資算出來的</span>
+    </div>
+    <div class="field">
+      <label style="display:flex;align-items:center;gap:0.5rem;font-weight:500">
+        <input type="checkbox" id="ee-menstrual" style="width:auto">
+        適用生理假
+      </label>
+    </div>
+    <div id="ee-msg"></div>
+    <div class="modal-actions">
+      <button class="btn" data-close>取消</button>
+      <button class="btn primary" id="ee-submit">儲存</button>
+    </div>
+  </div>
+</div>
+
 <!-- 員工假別餘額 -->
 <div class="overlay" id="modal-balance">
   <div class="modal">
@@ -1250,6 +1299,16 @@ async function loadEmployees() {
         if (e.狀態 !== '停用') {
           actions += '<button class="btn sm" data-balance="' + esc(e.員工編號) +
                      '" data-name="' + esc(e.姓名) + '">假別餘額</button>';
+        }
+
+        // 編輯與帳密連結只限最高權限：改身分等於發權限
+        if (isOwner()) {
+          actions += '<button class="btn sm" data-edit="' + esc(e.員工編號) + '">編輯</button>';
+          if (e.角色 !== '員工' && e.已綁定LINE && e.狀態 !== '停用') {
+            actions += '<button class="btn sm" data-cred="' + esc(e.員工編號) +
+                       '" data-name="' + esc(e.姓名) + '">' +
+                       (e.已設定後台帳號 ? '重設密碼' : '設定帳密') + '</button>';
+          }
         }
 
         // 停用與復職一律只限最高權限——這是離職把關點，不下放
@@ -2531,11 +2590,17 @@ const LIFF_BASE = 'https://liff.line.me/2011083590-EXsGOSUJ?token=';
 let currentInviteUrl = '';
 
 /** 顯示註冊連結。一定要看得到——只複製不顯示的話，複製失敗連結就沒了。 */
-function showInviteLink(name, token, expiry) {
+function showInviteLink(name, token, expiry, kind) {
   currentInviteUrl = LIFF_BASE + token;
-  $('mi-who').textContent = name ? name + ' 的註冊連結' : '註冊連結';
-  $('mi-note').textContent = '把連結傳給他，用手機 LINE 開啟即可完成註冊。' +
-    '連結用過就失效' + (expiry ? '，' + expiry + ' 前有效' : '') + '。';
+  const valid = '連結用過就失效' + (expiry ? '，' + expiry + ' 前有效' : '') + '。';
+  if (kind === 'credential') {
+    $('mi-who').textContent = (name ? name + ' 的' : '') + '後台帳密設定連結';
+    $('mi-note').textContent = '把連結傳給他，用他自己的手機 LINE 開啟，設定後台帳號密碼。' +
+      '只有他本人的 LINE 能使用，轉傳給別人也打不開。' + valid;
+  } else {
+    $('mi-who').textContent = name ? name + ' 的註冊連結' : '註冊連結';
+    $('mi-note').textContent = '把連結傳給他，用手機 LINE 開啟即可完成註冊。' + valid;
+  }
   $('mi-url').textContent = currentInviteUrl;
   openModal('modal-invite');
 }
@@ -2642,6 +2707,93 @@ $('ne-submit').addEventListener('click', async function () {
   }
 });
 
+// ── 編輯員工 ──────────────────────────────────────────
+let editingEmployee = null;
+
+function openEditEmployee(employeeId) {
+  const e = employees.filter(function (x) { return x.員工編號 === employeeId; })[0];
+  if (!e) return;
+  editingEmployee = e;
+
+  $('ee-title').textContent = '編輯員工：' + e.姓名 + '（' + e.員工編號 + '）';
+  $('ee-name').value = e.姓名 || '';
+  $('ee-cname').value = e.中文姓名 || '';
+  $('ee-hire').value = e.到職日 || '';
+  $('ee-annual').value = e.特休天數調整 === '' || e.特休天數調整 === null ? '' : e.特休天數調整;
+  $('ee-menstrual').checked = !!e.適用生理假;
+
+  // 已併入的舊店代碼不給選，但人如果還掛在那裡，要能看出來
+  $('ee-store').innerHTML = venues.filter(function (v) {
+    return v.狀態 !== '已併入' || v.店代碼 === e.所屬店;
+  }).map(function (v) {
+    return '<option value="' + esc(v.店代碼) + '">' + esc(v.店名) + '</option>';
+  }).join('');
+  $('ee-store').value = e.所屬店;
+
+  $('ee-role').value = e.角色;
+  const self = e.員工編號 === session.employee.員工編號;
+  $('ee-role').disabled = self;
+  updateRoleHint();
+
+  showMsg('ee-msg', '');
+  openModal('modal-edit-employee');
+}
+
+function updateRoleHint() {
+  const e = editingEmployee;
+  if (!e) return;
+  const role = $('ee-role').value;
+  let hint = '';
+  if (e.員工編號 === session.employee.員工編號) {
+    hint = '不能修改自己的身分，請由另一位最高權限處理';
+  } else if (role !== '員工' && e.角色 === '員工') {
+    hint = e.已綁定LINE
+      ? '儲存後會產生一條連結，傳給他用自己的 LINE 設定後台帳號密碼'
+      : '他還沒註冊，註冊時就會要求設定後台帳號密碼';
+  } else if (role === '員工' && e.角色 !== '員工') {
+    hint = '改成員工後，他就不能登入後台了';
+  }
+  $('ee-role-hint').textContent = hint;
+}
+
+$('ee-role').addEventListener('change', updateRoleHint);
+
+$('ee-submit').addEventListener('click', async function () {
+  const btn = this;
+  const e = editingEmployee;
+  btn.disabled = true; btn.textContent = '儲存中…';
+  showMsg('ee-msg', '');
+
+  try {
+    const result = await api('updateEmployee', {
+      employeeId: e.員工編號,
+      params: {
+        姓名: $('ee-name').value.trim(),
+        中文姓名: $('ee-cname').value.trim(),
+        所屬店: $('ee-store').value,
+        角色: $('ee-role').value,
+        到職日: $('ee-hire').value,
+        特休天數調整: $('ee-annual').value.trim(),
+        適用生理假: $('ee-menstrual').checked,
+      },
+    });
+
+    closeModal('modal-edit-employee');
+    invalidateViews();
+    loadEmployees();
+
+    if (result.帳密連結) {
+      showInviteLink(result.姓名, result.帳密連結.token, result.帳密連結.到期時間, 'credential');
+    } else {
+      toast('已儲存');
+    }
+  } catch (err) {
+    showMsg('ee-msg', esc(err.message));
+  } finally {
+    btn.disabled = false; btn.textContent = '儲存';
+  }
+});
+
 // ── 員工操作 ──────────────────────────────────────────
 $('emp-table').addEventListener('click', async function (e) {
   const btn = e.target.closest('button');
@@ -2665,6 +2817,14 @@ $('emp-table').addEventListener('click', async function (e) {
     if (btn.dataset.balance) {
       await showBalances(btn.dataset.balance, btn.dataset.name);
       return;
+    }
+    if (btn.dataset.edit) {
+      openEditEmployee(btn.dataset.edit);
+      return;
+    }
+    if (btn.dataset.cred) {
+      const result = await api('issueCredentialLink', { employeeId: btn.dataset.cred });
+      showInviteLink(btn.dataset.name || '', result.token, result.到期時間, 'credential');
     }
     if (btn.dataset.reissue) {
       const result = await api('reissueInvite', { employeeId: btn.dataset.reissue });

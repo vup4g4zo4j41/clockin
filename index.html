@@ -549,6 +549,7 @@
 // ─────────────────────────────────────────────
 const CONFIG = {
   LIFF_ID: '2011083590-EXsGOSUJ',
+  ADMIN_URL: 'https://vup4g4zo4j41.github.io/clockin/admin.html',
   API_URL: 'https://btjrsiusaqoldwvkebfv.supabase.co/functions/v1/api?forceFunctionRegion=ap-southeast-1',
 };
 
@@ -1313,11 +1314,24 @@ async function loadRegisterScreen(token) {
     document.getElementById('reg-credentials').style.display = 'flex';
   }
 
+  // 已註冊的主管拿到的是「設定後台帳密」連結，不是註冊連結。
+  // 畫面沿用註冊頁，只換文字與送出的動作。
+  const forCredential = info.用途 === '設定帳密';
+  const submitLabel = forCredential ? '確認，設定帳密' : '確認，完成註冊';
+  if (forCredential) {
+    document.querySelector('#screen-register .header .name').textContent =
+      info.目前帳號 ? '重設後台密碼' : '設定後台帳密';
+    document.querySelector('#screen-register .header .sub').textContent =
+      '設定完成後，就能用電腦登入管理後台';
+    document.getElementById('reg-account').value = info.目前帳號 || '';
+    document.getElementById('reg-submit').textContent = submitLabel;
+  }
+
   document.getElementById('reg-submit').onclick = async function () {
     const btn = this;
     const errEl = document.getElementById('reg-error');
     btn.disabled = true;
-    btn.textContent = '註冊中…';
+    btn.textContent = forCredential ? '設定中…' : '註冊中…';
     errEl.style.display = 'none';
 
     try {
@@ -1326,7 +1340,7 @@ async function loadRegisterScreen(token) {
         密碼: document.getElementById('reg-password').value,
       } : null;
 
-      await api('completeRegistration', {
+      const result = await api(forCredential ? 'completeCredentialSetup' : 'completeRegistration', {
         token: token,
         idToken: idToken,
         credentials: credentials,
@@ -1334,19 +1348,26 @@ async function loadRegisterScreen(token) {
 
       document.getElementById('result-icon').textContent = '✓';
       document.getElementById('result-time').textContent = '';
-      document.getElementById('result-type').textContent = '註冊完成';
-      document.getElementById('result-msg').textContent =
-        info.姓名 + '，你已經可以開始打卡了。之後從 LINE 的選單進入即可。';
+      if (forCredential) {
+        document.getElementById('result-type').textContent = result.重設 ? '密碼已重設' : '帳密設定完成';
+        document.getElementById('result-msg').textContent =
+          '請用電腦開啟 ' + CONFIG.ADMIN_URL + '，以帳號「' + result.帳號 + '」登入後台。';
+      } else {
+        document.getElementById('result-type').textContent = '註冊完成';
+        document.getElementById('result-msg').textContent =
+          info.姓名 + '，你已經可以開始打卡了。之後從 LINE 的選單進入即可。';
+      }
       document.getElementById('result-hours').style.display = 'none';
       document.getElementById('result-back').textContent = '開始使用';
       show('result');
 
     } catch (err) {
-      errEl.innerHTML = '<div class="error-box"><div class="t">註冊失敗</div>' +
+      errEl.innerHTML = '<div class="error-box"><div class="t">' +
+        (forCredential ? '設定失敗' : '註冊失敗') + '</div>' +
         '<div class="d">' + err.message + '</div></div>';
       errEl.style.display = '';
       btn.disabled = false;
-      btn.textContent = '確認，完成註冊';
+      btn.textContent = submitLabel;
     }
   };
 
