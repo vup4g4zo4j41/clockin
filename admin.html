@@ -1600,6 +1600,7 @@ const OFF_TEXT_MAP = {
   '例假': 'OFF_HOLIDAY',
   '例假日': 'OFF_HOLIDAY',
   '指定休': 'OFF_DESIGNATED',
+  '排休': 'OFF_DESIGNATED',     // 景安、頂溪的寫法，Martin 定義為指定休（2026-10-14）
   '調整休': 'OFF_ADJUST',
   '請假': 'OFF_LEAVE',
   '教召': 'OFF_OFFICIAL',
@@ -1639,12 +1640,13 @@ $('imp-file').addEventListener('change', async function (e) {
       return '<option value="' + esc(n) + '">' + esc(n) + '</option>';
     }).join('');
 
-    // 猜目前月份的工作表。各店命名不同：南華「20268月」、安康與頂溪「2026.8」
+    // 猜目前月份的工作表。各店命名不同：南華「20268月」、安康與頂溪「2026.8」、景安「202610」
     const now = new Date();
     const y = now.getFullYear();
     const m = now.getMonth() + 1;
+    const mm = ('0' + m).slice(-2);
     const guesses = [y + '' + m + '月', y + '.' + m, y + '-' + m, y + '/' + m,
-                     y + '.' + ('0' + m).slice(-2), y + '年' + m + '月'];
+                     y + '.' + mm, y + '年' + m + '月', y + '' + mm, y + '' + m];
 
     for (let i = 0; i < guesses.length; i++) {
       if (workbook.SheetNames.indexOf(guesses[i]) >= 0) {
@@ -1782,6 +1784,7 @@ async function parseSelectedSheet() {
     const unknownShifts = {};
     const matchedNames = {};
     let dateColumns = null;
+    let blankRun = 0;
 
     rows.forEach(function (row) {
       const first = String(row[0] || '').trim();
@@ -1795,15 +1798,24 @@ async function parseSelectedSheet() {
       }
       if (Object.keys(dates).length >= 3) {
         dateColumns = dates;
+        blankRun = 0;
         return;
       }
 
-      // 整列都空才算區塊結束。不能只看第一格——星期那一列的第一格就是空的，
-      // 誤判的話日期欄位會在讀到員工之前就被清掉。
+      // 連續兩列以上全空才算區塊結束。
+      //
+      // 不能只看第一格——星期那一列的第一格就是空的。也不能一遇到空列就結束——
+      // 景安把人分組，組與組之間空一列，空列下面的人會整組讀不到。
+      // 區塊結束後通常會空好幾列，或接著下一個日期標題列，兩種都能正確收尾。
       const isBlankRow = row.every(function (cell) {
         return String(cell === null || cell === undefined ? '' : cell).trim() === '';
       });
-      if (isBlankRow) { dateColumns = null; return; }
+      if (isBlankRow) {
+        blankRun++;
+        if (blankRun >= 2) dateColumns = null;
+        return;
+      }
+      blankRun = 0;
 
       if (!dateColumns) return;
       if (!first) return;                        // 星期列：跳過但區塊繼續
