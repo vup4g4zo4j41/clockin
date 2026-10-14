@@ -536,6 +536,11 @@
   <div class="modal">
     <h2>新增員工</h2>
     <div class="field">
+      <label for="ne-id">員工編號</label>
+      <input type="text" id="ne-id" placeholder="例如 96" autocapitalize="none">
+      <span class="hint">用公司現行的編號。留空的話系統會自動編成 EMP002 這種格式</span>
+    </div>
+    <div class="field">
       <label for="ne-name">姓名</label>
       <input type="text" id="ne-name" placeholder="王小明">
     </div>
@@ -569,6 +574,11 @@
 <div class="overlay" id="modal-edit-employee">
   <div class="modal">
     <h2 id="ee-title">編輯員工</h2>
+    <div class="field">
+      <label for="ee-id">員工編號</label>
+      <input type="text" id="ee-id" autocapitalize="none">
+      <span class="hint" id="ee-id-hint">改編號會一併更新他的班表、打卡紀錄、假單。舊編號之後不要再給別人用</span>
+    </div>
     <div class="field">
       <label for="ee-name">姓名（英文）</label>
       <input type="text" id="ee-name">
@@ -2650,6 +2660,7 @@ document.addEventListener('click', function (e) {
 
 // ── 新增員工 ──────────────────────────────────────────
 $('btn-add-employee').addEventListener('click', function () {
+  $('ne-id').value = '';
   $('ne-name').value = '';
   $('ne-hire').value = '';
   $('ne-result').classList.add('hidden');
@@ -2677,6 +2688,7 @@ $('ne-submit').addEventListener('click', async function () {
   try {
     const result = await api('createInvite', {
       params: {
+        員工編號: $('ne-id').value.trim(),
         姓名: $('ne-name').value.trim(),
         店代碼: $('ne-store').value,
         角色: $('ne-role').value,
@@ -2716,6 +2728,10 @@ function openEditEmployee(employeeId) {
   editingEmployee = e;
 
   $('ee-title').textContent = '編輯員工：' + e.姓名 + '（' + e.員工編號 + '）';
+  $('ee-id').value = e.員工編號 || '';
+  $('ee-id-hint').textContent = e.員工編號 === session.employee.員工編號
+    ? '這是你自己的編號，改了之後要重新登入後台'
+    : '改編號會一併更新他的班表、打卡紀錄、假單。舊編號之後不要再給別人用';
   $('ee-name').value = e.姓名 || '';
   $('ee-cname').value = e.中文姓名 || '';
   $('ee-hire').value = e.到職日 || '';
@@ -2768,6 +2784,7 @@ $('ee-submit').addEventListener('click', async function () {
     const result = await api('updateEmployee', {
       employeeId: e.員工編號,
       params: {
+        員工編號: $('ee-id').value.trim(),
         姓名: $('ee-name').value.trim(),
         中文姓名: $('ee-cname').value.trim(),
         所屬店: $('ee-store').value,
