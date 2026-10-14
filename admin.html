@@ -471,6 +471,10 @@
       <div class="toolbar">
         <select id="emp-store"></select>
         <button class="btn" id="emp-reload">重新整理</button>
+        <label style="display:flex;align-items:center;gap:0.4rem;font-size:0.88rem">
+          <input type="checkbox" id="emp-show-disabled" style="width:auto">
+          顯示已停用
+        </label>
         <span class="spacer"></span>
         <button class="btn primary" id="btn-add-employee">新增員工</button>
       </div>
@@ -1285,17 +1289,25 @@ async function loadEmployees() {
 
   try {
     employees = await api('listEmployees', { storeCode: $('emp-store').value || null });
-    $('emp-count').textContent = employees.length + ' 人';
 
-    if (!employees.length) {
-      table.innerHTML = '<tbody><tr><td class="empty">還沒有員工</td></tr></tbody>';
+    // 離職的人預設收起來。employees 仍保留完整名單，匯入班表、編輯時要用
+    const showDisabled = $('emp-show-disabled').checked;
+    const disabledCount = employees.filter(function (e) { return e.狀態 === '停用'; }).length;
+    const shown = showDisabled ? employees : employees.filter(function (e) { return e.狀態 !== '停用'; });
+
+    $('emp-count').textContent = shown.length + ' 人' +
+      (!showDisabled && disabledCount ? '（另有 ' + disabledCount + ' 人已停用）' : '');
+
+    if (!shown.length) {
+      table.innerHTML = '<tbody><tr><td class="empty">' +
+        (employees.length ? '沒有在職或待註冊的員工' : '還沒有員工') + '</td></tr></tbody>';
       return;
     }
 
     table.innerHTML =
       '<thead><tr><th>編號</th><th>姓名</th><th>店</th><th>身分</th><th>到職日</th>' +
       '<th>狀態</th><th></th></tr></thead><tbody>' +
-      employees.map(function (e) {
+      shown.map(function (e) {
         const statusMap = { '在職': 'ok', '待註冊': 'warn', '停用': 'mute' };
 
         let actions = '';
@@ -1349,6 +1361,13 @@ async function loadEmployees() {
 }
 
 $('emp-reload').addEventListener('click', loadEmployees);
+
+// 記住這個勾選，下次打開後台維持一樣（存在這台瀏覽器，存不了也不影響使用）
+try { $('emp-show-disabled').checked = localStorage.getItem('emp-show-disabled') === '1'; } catch (e) { /* 無痕模式等 */ }
+$('emp-show-disabled').addEventListener('change', function () {
+  try { localStorage.setItem('emp-show-disabled', this.checked ? '1' : '0'); } catch (e) { /* 同上 */ }
+  loadEmployees();
+});
 $('emp-store').addEventListener('change', loadEmployees);
 
 // ── 班表 ─────────────────────────────────────────────
