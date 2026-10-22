@@ -976,6 +976,7 @@ async function api(action, params, attempt) {
   const json = await res.json();
   if (!json.ok) {
     const err = new Error(json.error || '未知錯誤');
+    err.code = json.code || '';
     if (/請先登入|重新登入|逾時/.test(err.message)) logout();
     throw err;
   }
@@ -2415,6 +2416,23 @@ async function loadLeaves() {
   await Promise.all([loadPendingLeaves(), loadLeaveHistory()]);
 }
 
+/**
+ * 已結算的特休期別被擋下時，最高權限可以確認後強制更正（會在下個月 CSV 註明）。
+ * 店經理只會看到錯誤訊息。
+ */
+async function withAnnualCorrection(action, params) {
+  try {
+    return await api(action, params);
+  } catch (err) {
+    if (err.code !== 'ANNUAL_LOCKED' || !isOwner()) throw err;
+    if (!confirm(err.message + '\n\n確定要強制更正嗎？')) throw new Error('已取消');
+    const forced = Object.assign({}, params);
+    if (forced.params) forced.params = Object.assign({}, forced.params, { 更正: true });
+    else forced.更正 = true;
+    return await api(action, forced);
+  }
+}
+
 /** 只更新分頁上的數字，不動畫面——進後台時背景跑，不拖慢首頁。 */
 async function loadPendingLeaveCount() {
   try {
@@ -2536,7 +2554,7 @@ $('pending-table').addEventListener('click', async function (e) {
 
     btn.disabled = true;
     try {
-      await api('approveLeave', { leaveId: btn.dataset.approve });
+      await withAnnualCorrection('approveLeave', { leaveId: btn.dataset.approve });
       invalidateViews();
       toast('已核准');
       loadLeaves();
@@ -2571,7 +2589,7 @@ $('leave-table').addEventListener('click', async function (e) {
   const reason = prompt('作廢原因（可留空）') || '';
 
   try {
-    await api('cancelLeave', { leaveId: btn.dataset.cancel, reason: reason });
+    await withAnnualCorrection('cancelLeave', { leaveId: btn.dataset.cancel, reason: reason });
     invalidateViews();
     toast('已作廢');
     loadLeaves();
@@ -2617,7 +2635,7 @@ $('nl-submit').addEventListener('click', async function () {
   showMsg('nl-msg', '');
 
   try {
-    const result = await api('createLeaveByManager', {
+    const result = await withAnnualCorrection('createLeaveByManager', {
       params: {
         employeeId: $('nl-employee').value,
         假別: $('nl-type').value,
