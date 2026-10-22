@@ -1657,6 +1657,9 @@ async function main() {
     } else {
       setText('讀取資料…');
       await loadPunchScreen();
+
+      // 預覽模式：網址加 ?omikuji=1 直接看今天的籤，不定位、不打卡、不留紀錄
+      if (new URLSearchParams(location.search).get('omikuji') === '1') showOmikuji(lastContext);
     }
 
   } catch (err) {
