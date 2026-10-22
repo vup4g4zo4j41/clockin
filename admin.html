@@ -614,7 +614,12 @@
     <div class="field">
       <label for="ee-annual">特休天數調整</label>
       <input type="number" id="ee-annual" min="0" max="30" step="0.5" placeholder="留空＝依到職日自動計算">
-      <span class="hint">填了就以這個天數為準，覆蓋系統依年資算出來的</span>
+      <span class="hint">填了就以這個天數為準，每一期都會套用，覆蓋系統依年資算出來的。一般留空</span>
+    </div>
+    <div class="field">
+      <label for="ee-pre-annual">本期上線前已休特休（天）</label>
+      <input type="number" id="ee-pre-annual" min="0" max="30" step="0.5" placeholder="沒有就留空">
+      <span class="hint">特休採週年制。填「目前這一期」（含 2026-10-23 的那一期）在系統上線前已經休過的天數，只要填一次</span>
     </div>
     <div class="field">
       <label style="display:flex;align-items:center;gap:0.5rem;font-weight:500">
@@ -1268,6 +1273,7 @@ async function loadMonthly() {
 
     // 產假依年資由薪資系統判斷，有人請才多一欄
     const hasTenure = monthlyData.明細.some(function (r) { return r.依年資假 > 0; });
+    const hasPayout = monthlyData.明細.some(function (r) { return r.特休折現時數 > 0; });
 
     table.innerHTML =
       '<thead><tr><th>姓名</th><th>店</th><th class="num">出勤天數</th><th class="num">總時數</th>' +
@@ -1275,6 +1281,7 @@ async function loadMonthly() {
       '<th class="num" title="有排班、沒請假、整天沒打卡。記事假或曠職由總經理決定">待確認缺勤</th>' +
       '<th class="num">全薪假</th><th class="num">半薪假</th><th class="num">無薪假</th>' +
       (hasTenure ? '<th class="num" title="到職未滿 6 個月半薪，由薪資系統判斷">產假</th>' : '') +
+      (hasPayout ? '<th class="num" title="這個月特休到期或離職，沒休完要折現的時數">特休折現</th>' : '') +
       '<th>狀態</th></tr></thead><tbody>' +
       monthlyData.明細.map(function (r) {
         return '<tr>' +
@@ -1292,6 +1299,9 @@ async function loadMonthly() {
             : '0') + '</td>' +
           leavePayCell(r, 'full') + leavePayCell(r, 'half') + leavePayCell(r, 'none') +
           (hasTenure ? '<td class="num">' + (r.依年資假 || 0) + '</td>' : '') +
+          (hasPayout ? '<td class="num">' + (r.特休折現時數
+            ? '<span class="tag warn">' + r.特休折現時數 + '</span><div class="sub">' + esc(r.特休折現說明) + '</div>'
+            : '0') + '</td>' : '') +
           '<td>' + (r.狀態 === '在職' ? '' : '<span class="tag mute">' + esc(r.狀態) + '</span>') + '</td>' +
           '</tr>';
       }).join('') + '</tbody>';
@@ -1331,14 +1341,15 @@ $('btn-export').addEventListener('click', function () {
                    '遲到次數', '遲到分鐘', '早退次數', '早退分鐘', '未打卡天數']
     .concat(types.map(function (t) { return t + '（時）'; }))
     .concat(['全薪假（時）', '半薪假（時）', '無薪假（時）', '產假依年資（時）', '請假合計（時）', '待審假單',
-             '待確認缺勤（天）', '待確認缺勤（時）', '臨時請假次數（不含病假）', '臨時病假次數', '遲到超過30分次數']);
+             '待確認缺勤（天）', '待確認缺勤（時）', '臨時請假次數（不含病假）', '臨時病假次數', '遲到超過30分次數',
+             '特休折現（時）', '特休折現說明']);
   const rows = monthlyData.明細.map(function (r) {
     return [r.員工編號, fullName(r), storeName(r.店代碼), r.出勤天數, r.總時數,
             r.遲到次數, r.遲到分鐘 || 0, r.早退次數, r.早退分鐘 || 0, r.缺卡天數]
       .concat(types.map(function (t) { return (r.請假明細 || {})[t] || 0; }))
       .concat([r.全薪假, r.半薪假, r.無薪假, r.依年資假 || 0, r.請假時數, r.待審假單 || 0,
                r.待確認缺勤天數 || 0, r.待確認缺勤時數 || 0, r.臨時請假次數 || 0, r.臨時病假次數 || 0,
-               r.遲到超過30分次數 || 0]);
+               r.遲到超過30分次數 || 0, r.特休折現時數 || 0, r.特休折現說明 || '']);
   });
 
   const csv = [headers].concat(rows).map(function (row) {
@@ -2671,8 +2682,8 @@ async function showBalances(employeeId, name) {
     const list = await api('getEmployeeLeaveBalances', { employeeId: employeeId });
 
     $('mb-note').textContent =
-      '特休依到職日自動計算。若要另外認定，在試算表「員工」分頁的' +
-      '「特休天數調整」欄填天數就會蓋過系統算的。';
+      '特休採週年制：滿半年給 3 天，之後每個到職週年日依年資給，到下一個週年日前沒休完的折現。' +
+      '上線前已休的天數在「編輯員工」補填。';
 
     $('mb-table').innerHTML =
       '<thead><tr><th>假別</th><th class="num">額度</th><th class="num">已用</th>' +
@@ -2842,6 +2853,7 @@ function openEditEmployee(employeeId) {
   $('ee-cname').value = e.中文姓名 || '';
   $('ee-hire').value = e.到職日 || '';
   $('ee-annual').value = e.特休天數調整 === '' || e.特休天數調整 === null ? '' : e.特休天數調整;
+  $('ee-pre-annual').value = e.上線前已休特休 === '' || e.上線前已休特休 === null || e.上線前已休特休 === undefined ? '' : e.上線前已休特休;
   $('ee-menstrual').checked = !!e.適用生理假;
   $('ee-marriage-used').checked = !!e.婚假已請完;
 
@@ -2898,6 +2910,7 @@ $('ee-submit').addEventListener('click', async function () {
         角色: $('ee-role').value,
         到職日: $('ee-hire').value,
         特休天數調整: $('ee-annual').value.trim(),
+        上線前已休特休: $('ee-pre-annual').value.trim(),
         適用生理假: $('ee-menstrual').checked,
         婚假已請完: $('ee-marriage-used').checked,
       },
