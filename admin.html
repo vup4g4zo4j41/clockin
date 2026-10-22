@@ -728,17 +728,10 @@
         <input type="time" id="ns-end" value="16:00">
       </div>
     </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem">
-      <div class="field">
-        <label for="ns-rest">休息時數</label>
-        <input type="text" id="ns-rest" value="1" inputmode="decimal">
-        <span class="hint">單位小時</span>
-      </div>
-      <div class="field">
-        <label for="ns-grace">遲到寬限</label>
-        <input type="text" id="ns-grace" value="5" inputmode="numeric">
-        <span class="hint">單位分鐘</span>
-      </div>
+    <div class="field">
+      <label for="ns-rest">休息時數</label>
+      <input type="text" id="ns-rest" value="1" inputmode="decimal">
+      <span class="hint">單位小時。沒有遲到寬限：晚 1 分鐘就算遲到、早 1 分鐘就算早退</span>
     </div>
     <div id="ns-preview" class="msg ok" style="display:none"></div>
     <div id="ns-msg"></div>
@@ -1272,16 +1265,13 @@ async function loadMonthly() {
              (m > 0 ? ' <span class="sub">' + text + '</span>' : '');
     };
 
-    // 產假依年資由薪資系統判斷，有人請才多一欄
-    const hasTenure = monthlyData.明細.some(function (r) { return r.依年資假 > 0; });
     const hasPayout = monthlyData.明細.some(function (r) { return r.特休折現時數 > 0; });
 
     table.innerHTML =
       '<thead><tr><th>姓名</th><th>店</th><th class="num">出勤天數</th><th class="num">總時數</th>' +
       '<th class="num">遲到</th><th class="num">早退</th><th class="num" title="當天只打了上班卡或只打了下班卡">未打卡</th>' +
       '<th class="num" title="有排班、沒請假、整天沒打卡。記事假或曠職由總經理決定">待確認缺勤</th>' +
-      '<th class="num">全薪假</th><th class="num">半薪假</th><th class="num">無薪假</th>' +
-      (hasTenure ? '<th class="num" title="到職未滿 6 個月半薪，由薪資系統判斷">產假</th>' : '') +
+      '<th class="num">請假</th>' +
       (hasPayout ? '<th class="num" title="這個月特休到期或離職，沒休完要折現的時數">特休折現</th>' : '') +
       '<th>狀態</th></tr></thead><tbody>' +
       monthlyData.明細.map(function (r) {
@@ -1298,8 +1288,7 @@ async function loadMonthly() {
           '<td class="num">' + (r.待確認缺勤天數
             ? '<span class="tag crit">' + r.待確認缺勤天數 + ' 天</span> <span class="sub">' + r.待確認缺勤時數 + ' 小時</span>'
             : '0') + '</td>' +
-          leavePayCell(r, 'full') + leavePayCell(r, 'half') + leavePayCell(r, 'none') +
-          (hasTenure ? '<td class="num">' + (r.依年資假 || 0) + '</td>' : '') +
+          leaveCell(r) +
           (hasPayout ? '<td class="num">' + (r.特休折現時數
             ? '<span class="tag warn">' + r.特休折現時數 + '</span><div class="sub">' + esc(r.特休折現說明) + '</div>'
             : '0') + '</td>' : '') +
@@ -1312,10 +1301,16 @@ async function loadMonthly() {
   }
 }
 
-/**
- * 全薪／半薪／無薪假的格子：上面是時數，下面小字列出是哪些假別。
- * 無薪假用紅字，一眼看得出誰有要扣薪的假。
- */
+/** 請假格子：上面是合計時數，下面小字列出各假別，例如「特別休假 8・事假 4」。 */
+function leaveCell(r) {
+  if (!r.請假時數) return '<td class="num">0</td>';
+  const detail = Object.keys(r.請假明細 || {}).map(function (name) {
+    return esc(name) + ' ' + r.請假明細[name];
+  }).join('・');
+  return '<td class="num">' + r.請假時數 + (detail ? '<div class="sub">' + detail + '</div>' : '') + '</td>';
+}
+
+/** 舊的全薪／半薪／無薪分欄，2026-10-23 依 Martin 要求移除，留作對照。 */
 function leavePayCell(r, kind) {
   const hours = { full: r.全薪假, half: r.半薪假, none: r.無薪假 }[kind] || 0;
   if (!hours) return '<td class="num">0</td>';
@@ -1341,14 +1336,14 @@ $('btn-export').addEventListener('click', function () {
   const headers = ['員工編號', '姓名', '店', '出勤天數', '總時數',
                    '遲到次數', '遲到分鐘', '早退次數', '早退分鐘', '未打卡天數']
     .concat(types.map(function (t) { return t + '（時）'; }))
-    .concat(['全薪假（時）', '半薪假（時）', '無薪假（時）', '產假依年資（時）', '請假合計（時）', '待審假單',
+    .concat(['產假依年資（時）', '請假合計（時）', '待審假單',
              '待確認缺勤（天）', '待確認缺勤（時）', '臨時請假次數（不含病假）', '臨時病假次數', '遲到超過30分次數',
              '特休折現（時）', '特休折現說明']);
   const rows = monthlyData.明細.map(function (r) {
     return [r.員工編號, fullName(r), storeName(r.店代碼), r.出勤天數, r.總時數,
             r.遲到次數, r.遲到分鐘 || 0, r.早退次數, r.早退分鐘 || 0, r.缺卡天數]
       .concat(types.map(function (t) { return (r.請假明細 || {})[t] || 0; }))
-      .concat([r.全薪假, r.半薪假, r.無薪假, r.依年資假 || 0, r.請假時數, r.待審假單 || 0,
+      .concat([r.依年資假 || 0, r.請假時數, r.待審假單 || 0,
                r.待確認缺勤天數 || 0, r.待確認缺勤時數 || 0, r.臨時請假次數 || 0, r.臨時病假次數 || 0,
                r.遲到超過30分次數 || 0, r.特休折現時數 || 0, r.特休折現說明 || '']);
   });
@@ -2062,7 +2057,7 @@ function renderImportPreview(entries, matched, unknownNames, unknownShifts) {
           上班時間: p.上班時間,
           下班時間: p.下班時間,
           休息時數: 0,
-          遲到寬限: 5,
+          遲到寬限: 0,
         } : null;
       }).filter(Boolean);
 
@@ -2135,7 +2130,7 @@ async function loadShifts() {
     } else {
       table.innerHTML =
         '<thead><tr><th>代碼</th><th>名稱</th><th>適用</th><th>時間</th>' +
-        '<th class="num">休息</th><th class="num">應出勤</th><th class="num">寬限</th>' +
+        '<th class="num">休息</th><th class="num">應出勤</th>' +
         '<th>班表顏色</th><th></th></tr></thead><tbody>' +
         shiftTypes.map(function (s) {
           return '<tr>' +
@@ -2148,7 +2143,6 @@ async function loadShifts() {
             '<td class="mono">' + esc(s.上班時間) + '–' + esc(s.下班時間) + '</td>' +
             '<td class="num">' + s.休息時數 + ' 時</td>' +
             '<td class="num">' + s.應出勤時數 + ' 時</td>' +
-            '<td class="num">' + s.遲到寬限 + ' 分</td>' +
             '<td class="swatches" data-code="' + esc(s.班別代碼) + '">' +
               SHIFT_COLORS.map(function (c) {
                 return '<span class="swatch sh-' + c + (c === s.顏色 ? ' on' : '') +
@@ -2209,7 +2203,6 @@ $('btn-add-shift').addEventListener('click', function () {
   $('ns-start').value = '07:00';
   $('ns-end').value = '16:00';
   $('ns-rest').value = '1';
-  $('ns-grace').value = '5';
   showMsg('ns-msg', '');
   updateShiftPreview();
 
@@ -2256,7 +2249,7 @@ $('ns-submit').addEventListener('click', async function () {
         上班時間: $('ns-start').value,
         下班時間: $('ns-end').value,
         休息時數: $('ns-rest').value,
-        遲到寬限: $('ns-grace').value,
+        遲到寬限: 0,
       },
     });
 
