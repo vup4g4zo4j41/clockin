@@ -246,6 +246,13 @@
 
   .empty { text-align: center; color: var(--muted); font-size: 0.9rem; padding: 2.5rem 1rem; }
 
+  .leave-side { display: flex; flex-direction: column; align-items: flex-end; gap: 0.4rem; }
+  .withdraw-btn {
+    background: none; border: 1px solid var(--rule); border-radius: 8px;
+    padding: 0.3rem 0.7rem; font-family: inherit; font-size: 0.82rem; color: var(--ink-2);
+  }
+  .withdraw-btn:disabled { opacity: 0.5; }
+
   /* ── 請假 ── */
   .field select {
     font-family: inherit; font-size: 1rem;
@@ -1183,7 +1190,7 @@ document.getElementById('sh-next').addEventListener('click', function () {
 let leaveData = null;
 
 const LEAVE_TAG = {
-  '待審核': 'info', '已核准': 'ok', '已退回': 'warn', '已作廢': 'mute',
+  '待審核': 'info', '已核准': 'ok', '已退回': 'warn', '已作廢': 'mute', '已撤回': 'mute',
 };
 
 async function loadLeaveScreen() {
@@ -1264,11 +1271,37 @@ function renderMyLeaves(leaves) {
       '<div><div class="t">' + esc(l.假別) + ' · ' + l.時數 + ' 小時' +
         (l.臨時請假 ? ' <span class="tag warn">臨時</span>' : '') + '</div>' +
         '<div class="d">' + esc(range) + '</div></div>' +
-      '<span class="tag ' + (LEAVE_TAG[l.狀態] || 'info') + '">' + esc(l.狀態) + '</span>' +
+      '<div class="leave-side">' +
+        '<span class="tag ' + (LEAVE_TAG[l.狀態] || 'info') + '">' + esc(l.狀態) + '</span>' +
+        (l.狀態 === '待審核'
+          ? '<button class="withdraw-btn" data-id="' + esc(l.單號) + '">撤回</button>'
+          : '') +
+      '</div>' +
       note +
       '</div>';
   }).join('');
 }
+
+// 待審核的單可以自己撤回；核准後要找店長作廢
+document.getElementById('leave-log').addEventListener('click', async function (e) {
+  const btn = e.target.closest('.withdraw-btn');
+  if (!btn) return;
+  if (!confirm('確定要撤回這張假單嗎？撤回後如果還要請，需要重新送一張。')) return;
+
+  btn.disabled = true;
+  btn.textContent = '撤回中…';
+  try {
+    await api('withdrawLeave', { idToken: idToken, leaveId: btn.dataset.id });
+    showLeaveMsg('已撤回', false);
+    leaveData = await api('getLeaveFormData', { idToken: idToken });
+    renderLeaveBalance(leaveData.餘額);
+    renderMyLeaves(leaveData.假單);
+  } catch (err) {
+    showLeaveMsg(err.message, true);
+    btn.disabled = false;
+    btn.textContent = '撤回';
+  }
+});
 
 function showLeaveMsg(text, isError) {
   const el = document.getElementById('lv-msg');
