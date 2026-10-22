@@ -84,6 +84,17 @@
   .shift-time { font-size: 1.15rem; font-weight: 650; font-variant-numeric: tabular-nums; }
   .shift-name { font-size: 0.88rem; color: var(--ink-2); }
 
+  /* ── 待審假單提醒（只有主管看得到） ── */
+  .leave-alert {
+    display: flex; align-items: center; gap: 0.6rem;
+    padding: 0.85rem 1rem;
+    border-radius: 10px;
+    font-size: 0.92rem; font-weight: 600;
+    background: var(--warn-soft); color: var(--warn);
+    text-decoration: none;
+  }
+  .leave-alert .txt { flex: 1; }
+
   /* ── 定位狀態 ── */
   .locate {
     display: flex; align-items: center; gap: 0.6rem;
@@ -343,6 +354,11 @@
       <div class="name" id="punch-name">—</div>
       <div class="sub" id="punch-sub">—</div>
     </div>
+
+    <a class="leave-alert" id="leave-alert" style="display:none">
+      <span class="txt" id="leave-alert-text"></span>
+      <span>→</span>
+    </a>
 
     <div class="card" id="shift-card">
       <div class="card-label">今日班表</div>
@@ -785,6 +801,16 @@ function renderContext(ctx) {
     todayCard.style.display = '';
   } else {
     todayCard.style.display = 'none';
+  }
+
+  // 有人送假單，店長打卡時就會看到，不必特地開後台
+  const leaveAlert = document.getElementById('leave-alert');
+  if (ctx.待審假單 > 0) {
+    document.getElementById('leave-alert-text').textContent = '有 ' + ctx.待審假單 + ' 張假單待審核';
+    leaveAlert.href = CONFIG.ADMIN_URL + '#leaves';
+    leaveAlert.style.display = '';
+  } else {
+    leaveAlert.style.display = 'none';
   }
 
   document.getElementById('setup-entry').style.display = ctx.可設定場館 ? '' : 'none';

@@ -1048,10 +1048,16 @@ async function enterApp() {
   $('sched-month').value = monthStr();
   $('leave-month').value = monthStr();
 
+  // 從打卡頁的「待審假單」提醒點進來，直接開假單分頁
+  if (location.hash === '#leaves') {
+    document.querySelector('#nav button[data-view="leaves"]').click();
+    loadPendingLeaveCount();
+    return;
+  }
+
   await loadDaily();
 
-  // 一進後台就把待審張數撈回來標在分頁上——不推播通知，
-  // 主管唯一會發現有人請假的地方就是這裡。
+  // 一進後台就把待審張數撈回來標在分頁上，跟打卡頁的提醒是同一個數字
   loadPendingLeaveCount();
 }
 
