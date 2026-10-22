@@ -56,43 +56,39 @@
   @keyframes spin { to { transform: rotate(360deg); } }
 
   /* ── 今日御神籤（上班打卡後的小彩蛋，不記錄任何資料） ── */
-  /* 字型：幸福預告手書，只抽出籤上用到的字（約 380 字，95 KB）。
+  /* 字型：思源宋體（Noto Serif TC，SIL 開放授權），只抽出籤上用到的字，每個粗細約 68 KB。
      籤的內容有改字時，要重新抽字型，不然新字會顯示成系統字。
      配色：城市健身品牌橘 #EA5326 */
-  @font-face {
-    font-family: 'Omikuji';
-    src: url('fonts/omikuji.woff2') format('woff2');
-    font-display: swap;
-  }
+  @font-face { font-family: 'Omikuji'; src: url('fonts/omikuji-serif-500.woff2') format('woff2'); font-weight: 500; font-display: swap; }
+  @font-face { font-family: 'Omikuji'; src: url('fonts/omikuji-serif-700.woff2') format('woff2'); font-weight: 700; font-display: swap; }
+  @font-face { font-family: 'Omikuji'; src: url('fonts/omikuji-serif-900.woff2') format('woff2'); font-weight: 900; font-display: swap; }
   .omikuji {
     position: fixed; inset: 0; z-index: 50;
     display: none; align-items: center; justify-content: center;
     background: rgba(12, 18, 24, 0.55); padding: 16px;
   }
   .omikuji.open { display: flex; }
-  .omi-tube {
-    width: 72px; height: 120px; border-radius: 10px 10px 16px 16px;
-    background: linear-gradient(#EA5326, #C4431B); position: relative;
-    box-shadow: 0 8px 24px rgba(0,0,0,0.25);
-    animation: omi-shake 0.9s ease-in-out;
-  }
-  .omi-tube::before {
-    content: '御神籤'; position: absolute; inset: 22px 0 auto; text-align: center;
-    color: #FFFFFF; font-family: 'Omikuji', var(--sans); letter-spacing: 0.15em; writing-mode: vertical-rl;
-    margin: 0 auto; left: 0; right: 0; width: 1.4em; font-size: 0.95rem;
-  }
-  .omi-tube::after {
-    content: ''; position: absolute; top: -26px; left: 31px; width: 10px; height: 40px;
+  /* 籤筒：籤棒先畫、筒身後畫，籤棒就像從筒子後面冒出來 */
+  .omi-tube { position: relative; width: 72px; height: 150px; animation: omi-shake 0.9s ease-in-out; }
+  .omi-tube-stick {
+    position: absolute; top: 0; left: 31px; width: 10px; height: 60px;
     background: #F3E3CF; border-radius: 3px; animation: omi-stick 0.9s ease-in-out forwards;
+  }
+  .omi-tube-body {
+    position: absolute; left: 0; right: 0; bottom: 0; height: 120px;
+    border-radius: 10px 10px 16px 16px; background: linear-gradient(#EA5326, #C4431B);
+    box-shadow: 0 8px 24px rgba(0,0,0,0.25);
+    color: #FFFFFF; font-family: 'Omikuji', serif; font-weight: 700; font-size: 0.95rem; letter-spacing: 0.15em;
+    writing-mode: vertical-rl; display: flex; align-items: center; justify-content: center;
   }
   @keyframes omi-shake {
     0%, 100% { transform: rotate(0); } 15% { transform: rotate(-14deg); } 35% { transform: rotate(12deg); }
     55% { transform: rotate(-10deg); } 75% { transform: rotate(8deg); }
   }
-  @keyframes omi-stick { 0%, 70% { transform: translateY(14px); } 100% { transform: translateY(-14px); } }
+  @keyframes omi-stick { 0%, 70% { transform: translateY(30px); } 100% { transform: translateY(0); } }
   .omi-card {
     display: none; width: 100%; max-width: 320px;
-    background: #FFFCF9; color: #2B2522; font-family: 'Omikuji', var(--sans);
+    background: #FFFCF9; color: #2B2522; font-family: 'Omikuji', serif; font-weight: 500;
     border: 2px solid #EA5326; outline: 6px solid #FFFCF9; outline-offset: -10px;
     border-radius: 6px; padding: 1.6rem 1.4rem 1.3rem; text-align: center;
     box-shadow: 0 16px 40px rgba(0,0,0,0.3);
@@ -104,20 +100,20 @@
   .omi-head { font-size: 0.85rem; letter-spacing: 0.35em; color: #C4431B; }
   /* 運勢大字用往右下偏移的陰影，像蓋上去的印，不用發光 */
   .omi-rank {
-    font-size: 3.2rem; letter-spacing: 0.25em; color: #EA5326;
+    font-size: 3.2rem; font-weight: 900; letter-spacing: 0.25em; color: #EA5326;
     margin: 0.4rem 0 0.6rem; padding-left: 0.25em;
     text-shadow: 3px 3px 0 rgba(43, 37, 34, 0.18);
   }
-  .omi-title { font-size: 1.3rem; margin-bottom: 0.35rem; }
+  .omi-title { font-size: 1.3rem; font-weight: 700; margin-bottom: 0.35rem; }
   .omi-text { font-size: 1.02rem; line-height: 1.6; color: #5C504A; }
   .omi-wish { margin-top: 1rem; padding-top: 0.8rem; border-top: 1px dashed #F2C2AE; font-size: 0.98rem; color: #7A6A62; }
   .omi-btn {
     margin-top: 1.1rem; width: 100%; padding: 0.8rem; border: none; border-radius: 10px;
-    background: #EA5326; color: #FFFFFF; font-family: inherit; font-size: 1.05rem;
+    background: #EA5326; color: #FFFFFF; font-family: inherit; font-size: 1.05rem; font-weight: 700;
     box-shadow: 0 3px 0 #C4431B;
   }
   @media (prefers-reduced-motion: reduce) {
-    .omi-tube, .omi-tube::after, .omi-card { animation: none; }
+    .omi-tube, .omi-tube-stick, .omi-card { animation: none; }
   }
 
   @media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 2s; } }
@@ -645,7 +641,7 @@
 
 <!-- 今日御神籤：上班打卡成功後跳出，同一人同一天固定同一支 -->
 <div class="omikuji" id="omikuji" role="dialog" aria-label="今日御神籤">
-  <div class="omi-tube"></div>
+  <div class="omi-tube"><div class="omi-tube-stick"></div><div class="omi-tube-body">御神籤</div></div>
   <div class="omi-card">
     <div class="omi-head">今 日 御 神 籤</div>
     <div class="omi-rank" id="omi-rank">大吉</div>
