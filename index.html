@@ -54,6 +54,62 @@
     animation: spin 0.8s linear infinite;
   }
   @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ── 今日御神籤（上班打卡後的小彩蛋，不記錄任何資料） ── */
+  .omikuji {
+    position: fixed; inset: 0; z-index: 50;
+    display: none; align-items: center; justify-content: center;
+    background: rgba(12, 18, 24, 0.55); padding: 16px;
+  }
+  .omikuji.open { display: flex; }
+  .omi-tube {
+    width: 72px; height: 120px; border-radius: 10px 10px 16px 16px;
+    background: linear-gradient(#C8402F, #A2301F); position: relative;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.25);
+    animation: omi-shake 0.9s ease-in-out;
+  }
+  .omi-tube::before {
+    content: '御神籤'; position: absolute; inset: 22px 0 auto; text-align: center;
+    color: #FFF6E8; font-weight: 700; letter-spacing: 0.15em; writing-mode: vertical-rl;
+    margin: 0 auto; left: 0; right: 0; width: 1.4em; font-size: 0.95rem;
+  }
+  .omi-tube::after {
+    content: ''; position: absolute; top: -26px; left: 31px; width: 10px; height: 40px;
+    background: #E9D9B8; border-radius: 3px; animation: omi-stick 0.9s ease-in-out forwards;
+  }
+  @keyframes omi-shake {
+    0%, 100% { transform: rotate(0); } 15% { transform: rotate(-14deg); } 35% { transform: rotate(12deg); }
+    55% { transform: rotate(-10deg); } 75% { transform: rotate(8deg); }
+  }
+  @keyframes omi-stick { 0%, 70% { transform: translateY(14px); } 100% { transform: translateY(-14px); } }
+  .omi-card {
+    display: none; width: 100%; max-width: 320px;
+    background: #FFFDF8; color: #2A1A12;
+    border: 2px solid #C8402F; outline: 6px solid #FFFDF8; outline-offset: -10px;
+    border-radius: 6px; padding: 1.6rem 1.4rem 1.3rem; text-align: center;
+    box-shadow: 0 16px 40px rgba(0,0,0,0.3);
+    animation: omi-pop 0.45s cubic-bezier(.2,1.4,.4,1);
+  }
+  .omikuji.revealed .omi-tube { display: none; }
+  .omikuji.revealed .omi-card { display: block; }
+  @keyframes omi-pop { from { transform: scale(0.6) rotate(-4deg); opacity: 0; } to { transform: none; opacity: 1; } }
+  .omi-head { font-size: 0.8rem; letter-spacing: 0.35em; color: #A2301F; }
+  .omi-rank {
+    font-size: 3rem; font-weight: 800; letter-spacing: 0.25em; color: #C8402F;
+    margin: 0.4rem 0 0.6rem; padding-left: 0.25em;
+  }
+  .omi-rank.big { text-shadow: 0 0 18px rgba(232, 168, 56, 0.55); }
+  .omi-title { font-size: 1.15rem; font-weight: 700; margin-bottom: 0.35rem; }
+  .omi-text { font-size: 0.95rem; line-height: 1.6; color: #5A4636; }
+  .omi-wish { margin-top: 1rem; padding-top: 0.8rem; border-top: 1px dashed #D9C3A5; font-size: 0.9rem; color: #7A5A44; }
+  .omi-btn {
+    margin-top: 1.1rem; width: 100%; padding: 0.8rem; border: none; border-radius: 10px;
+    background: #C8402F; color: #FFF6E8; font-family: inherit; font-size: 1rem; font-weight: 700;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .omi-tube, .omi-tube::after, .omi-card { animation: none; }
+  }
+
   @media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 2s; } }
 
   .loading-text { color: var(--ink-2); font-size: 0.95rem; }
@@ -576,6 +632,20 @@
 
 </div>
 
+
+<!-- 今日御神籤：上班打卡成功後跳出，同一人同一天固定同一支 -->
+<div class="omikuji" id="omikuji" role="dialog" aria-label="今日御神籤">
+  <div class="omi-tube"></div>
+  <div class="omi-card">
+    <div class="omi-head">今 日 御 神 籤</div>
+    <div class="omi-rank" id="omi-rank">大吉</div>
+    <div class="omi-title" id="omi-title"></div>
+    <div class="omi-text" id="omi-text"></div>
+    <div class="omi-wish" id="omi-wish"></div>
+    <button class="omi-btn" id="omi-close">收下好運</button>
+  </div>
+</div>
+
 <script>
 // ─────────────────────────────────────────────
 // 設定：部署時填入這兩個值
@@ -783,7 +853,10 @@ let venueName = '';
 
 const WEEKDAYS = ['日', '一', '二', '三', '四', '五', '六'];
 
+let lastContext = null;   // 御神籤要用員工編號、出勤日、姓名
+
 function renderContext(ctx) {
+  lastContext = ctx;
   nextAction = ctx.下一步;
   venueName = ctx.店名;
   punchPoints = (ctx.打卡點 || []).filter(function (p) { return p.lat && p.lng; });
@@ -878,6 +951,8 @@ async function doPunch() {
     document.getElementById('tabs').style.display = 'none';
     show('result');
 
+    if (result.類型 === '上班') showOmikuji(lastContext);
+
   } catch (err) {
     document.getElementById('result-icon').textContent = '✕';
     document.getElementById('result-time').textContent = '';
@@ -896,6 +971,105 @@ async function loadPunchScreen() {
   show('punch');
   if (ok) locate();
 }
+
+
+// ─────────────────────────────────────────────
+// 今日御神籤（上班打卡後的小彩蛋）
+//
+// 只有好籤：大吉 20%、中吉 40%、小吉 40%。同一個人同一天固定同一支
+// （用員工編號＋出勤日算），重開頁面也一樣，抽到不喜歡也不能重抽。
+// 純前端顯示，不送後端、不記錄。
+// ─────────────────────────────────────────────
+const OMIKUJI = {
+  '大吉': [
+    ['金單自來', '會員主動上門，開口就是好消息'],
+    ['業績長紅', '今日目標輕鬆達標，數字一路往上'],
+    ['一單接一單', '第一張單開完，好運連著來'],
+    ['大單入袋', '今天有機會談成大方案'],
+    ['目標提前達陣', '月目標比預期更早完成'],
+    ['財源滾滾', '今天的努力，月底都看得見'],
+    ['開門紅', '今天第一位會員就帶來好兆頭'],
+    ['學員破 PR', '今天有學員突破自己的紀錄'],
+    ['步步高升', '每一步都在往更好的地方前進'],
+    ['心想事成', '今天想做的事都順順的'],
+    ['萬事如意', '大事小事都照你的意思走'],
+    ['大吉大利', '上上之籤，今天就是你的日子'],
+  ],
+  '中吉': [
+    ['成交在望', '猶豫的會員今天點頭說好'],
+    ['續約連連', '老學員開心續課，一續就是一大包'],
+    ['口碑相傳', '會員帶朋友來，介紹一個又一個'],
+    ['體驗變會員', '今天來體驗的朋友，明天的好會員'],
+    ['銷售順手', '說的每句話都說進會員心裡'],
+    ['課表滿檔', '教練課一堂接一堂，時間剛剛好'],
+    ['教學有成', '你教的動作，學員一次就上手'],
+    ['好評如潮', '學員下課滿臉笑容，給你大大的讚'],
+    ['成果看得見', '學員的改變，就是你最好的招牌'],
+    ['貴人相助', '同事、會員都挺你'],
+    ['好消息報到', '今天會聽到讓你開心的消息'],
+    ['被看見', '你的努力今天會被注意到'],
+    ['好運附身', '今天做什麼都特別順手'],
+    ['能量爆棚', '熱情滿到可以分給每一位會員'],
+    ['夢想起飛', '今天的努力，離目標又更近一步'],
+  ],
+  '小吉': [
+    ['師徒同心', '學員今天特別認真，跟著你一起拚'],
+    ['神準指導', '你的一句提醒，解決學員卡很久的問題'],
+    ['約課順利', '想約的時段都約得到，沒有人放鳥'],
+    ['默契十足', '今天跟夥伴配合得天衣無縫'],
+    ['和氣生財', '笑容滿面，好事自然靠過來'],
+    ['人緣滿分', '走到哪都有人跟你打招呼'],
+    ['合作無間', '有人主動幫你一把，事半功倍'],
+    ['賓至如歸', '每位會員走進來都覺得舒服'],
+    ['體能滿格', '精神好、狀態佳，整天都有勁'],
+    ['神清氣爽', '腦袋清楚，做什麼都順'],
+    ['從容自在', '再忙也不慌，一切都在掌握中'],
+    ['練有所成', '今天自己的訓練也會有好表現'],
+    ['平安順心', '上班順利，下班平安'],
+  ],
+};
+
+/** 字串 → 固定的整數（FNV-1a），同樣的人＋日期永遠得到同樣的籤。 */
+function omikujiHash(text) {
+  let h = 2166136261;
+  for (let i = 0; i < text.length; i++) {
+    h ^= text.charCodeAt(i);
+    h = Math.imul(h, 16777619) >>> 0;
+  }
+  return h;
+}
+
+function drawOmikuji(empId, date) {
+  const seed = omikujiHash(String(empId) + '|' + date);
+  const roll = seed % 100;
+  const rank = roll < 20 ? '大吉' : roll < 60 ? '中吉' : '小吉';
+  const list = OMIKUJI[rank];
+  const pick = list[omikujiHash(date + '#' + empId) % list.length];
+  return { rank: rank, title: pick[0], text: pick[1] };
+}
+
+function showOmikuji(ctx) {
+  if (!ctx || !ctx.員工編號 || !ctx.日期) return;
+  const o = drawOmikuji(ctx.員工編號, ctx.日期);
+  // 用英文名（Chris）比較親切；姓名欄存的就是英文名
+  const name = String(ctx.姓名 || '').trim();
+
+  document.getElementById('omi-rank').textContent = o.rank;
+  document.getElementById('omi-rank').classList.toggle('big', o.rank === '大吉');
+  document.getElementById('omi-title').textContent = o.title;
+  document.getElementById('omi-text').textContent = o.text;
+  document.getElementById('omi-wish').textContent = '祝 ' + name + ' 今天上班順利 ✨';
+
+  const box = document.getElementById('omikuji');
+  box.classList.remove('revealed');
+  box.classList.add('open');
+  const reduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  setTimeout(function () { box.classList.add('revealed'); }, reduced ? 0 : 950);
+}
+
+document.getElementById('omi-close').addEventListener('click', function () {
+  document.getElementById('omikuji').classList.remove('open', 'revealed');
+});
 
 // ─────────────────────────────────────────────
 // 我的紀錄
