@@ -622,6 +622,13 @@
         適用生理假
       </label>
     </div>
+    <div class="field">
+      <label style="display:flex;align-items:center;gap:0.5rem;font-weight:500">
+        <input type="checkbox" id="ee-marriage-used" style="width:auto">
+        婚假已請完
+      </label>
+      <span class="hint">勾了之後他就不能再請婚假。婚假是每次結婚 8 天，再婚時取消勾選</span>
+    </div>
     <div id="ee-msg"></div>
     <div class="modal-actions">
       <button class="btn" data-close>取消</button>
@@ -2777,6 +2784,7 @@ function openEditEmployee(employeeId) {
   $('ee-hire').value = e.到職日 || '';
   $('ee-annual').value = e.特休天數調整 === '' || e.特休天數調整 === null ? '' : e.特休天數調整;
   $('ee-menstrual').checked = !!e.適用生理假;
+  $('ee-marriage-used').checked = !!e.婚假已請完;
 
   // 已併入的舊店代碼不給選，但人如果還掛在那裡，要能看出來
   $('ee-store').innerHTML = venues.filter(function (v) {
@@ -2832,6 +2840,7 @@ $('ee-submit').addEventListener('click', async function () {
         到職日: $('ee-hire').value,
         特休天數調整: $('ee-annual').value.trim(),
         適用生理假: $('ee-menstrual').checked,
+        婚假已請完: $('ee-marriage-used').checked,
       },
     });
 
