@@ -555,9 +555,9 @@
     <div class="field">
       <label for="ne-role">身分</label>
       <select id="ne-role">
-        <option value="員工">員工</option>
-        <option value="店長">店長</option>
-        <option value="儲備幹部">儲備幹部</option>
+        <option value="場館教練">場館教練</option>
+        <option value="店經理">店經理</option>
+        <option value="儲備經理">儲備經理</option>
         <option value="最高權限">最高權限</option>
       </select>
     </div>
@@ -600,9 +600,9 @@
     <div class="field">
       <label for="ee-role">身分</label>
       <select id="ee-role">
-        <option value="員工">員工</option>
-        <option value="店長">店長</option>
-        <option value="儲備幹部">儲備幹部</option>
+        <option value="場館教練">場館教練</option>
+        <option value="店經理">店經理</option>
+        <option value="儲備經理">儲備經理</option>
         <option value="最高權限">最高權限</option>
       </select>
       <span class="hint" id="ee-role-hint"></span>
@@ -892,6 +892,22 @@ let session = null;   // { token, employee }
 let venues = [];
 let employees = [];
 
+// 英文名 → 中文名。英文名系統裡不會重複，所以出勤、假單這些只帶英文名的資料也查得到。
+// 每次載入員工名單就補進來（員工分頁可能只載一間店，所以用合併的、不覆蓋）。
+const zhNames = new Map();
+function rememberNames(list) {
+  (list || []).forEach(function (e) {
+    if (e && e.姓名) zhNames.set(String(e.姓名), String(e.中文姓名 || ''));
+  });
+}
+
+/** 顯示用的姓名「中文 英文」，例如「蔡淮亘 Gen」。沒填中文就只顯示英文。 */
+function fullName(x) {
+  const en = String((x && x.姓名) || '');
+  const zh = String((x && x.中文姓名) || zhNames.get(en) || '');
+  return zh && zh !== en ? zh + ' ' + en : en;
+}
+
 /** 是否為最高權限。後端每個動作都會自己再驗一次，這裡只管畫面要不要顯示。 */
 function isOwner() {
   return !!session && session.employee.角色 === '最高權限';
@@ -1039,7 +1055,7 @@ $('logout').addEventListener('click', logout);
 async function enterApp() {
   $('login').style.display = 'none';
   $('app').classList.remove('hidden');
-  $('who-name').textContent = session.employee.姓名;
+  $('who-name').textContent = fullName(session.employee);
   $('who-role').textContent = session.employee.角色;
 
   // 異動紀錄是全公司的，店長不該看到別店的操作
@@ -1050,6 +1066,8 @@ async function enterApp() {
   venues = boot.venues;
   shiftTypes = boot.shiftTypes;
   employees = boot.employees;
+  rememberNames(employees);
+  $('who-name').textContent = fullName(session.employee);
   fillStoreSelects();
 
   $('daily-date').value = todayStr();
@@ -1179,21 +1197,21 @@ async function loadDaily() {
       data.明細.map(function (r) {
         const suspicious = r.可疑 ? ' <span class="tag warn" title="' + esc(r.可疑) + '">可疑</span>' : '';
         return '<tr>' +
-          '<td>' + esc(r.姓名) + '</td>' +
+          '<td>' + esc(fullName(r)) + '</td>' +
           '<td>' + esc(storeName(r.店代碼)) + '</td>' +
           '<td class="mono">' + esc(r.班表) + '</td>' +
           '<td class="mono">' + esc(r.上班) +
             (r.上班紀錄ID ? ' <button class="btn sm" data-edit="' + esc(r.上班紀錄ID) +
-              '" data-label="' + esc(r.姓名 + ' 上班 ' + r.上班) + '">改</button>' : '') + '</td>' +
+              '" data-label="' + esc(fullName(r) + ' 上班 ' + r.上班) + '">改</button>' : '') + '</td>' +
           '<td class="mono">' + esc(r.下班) +
             (r.下班紀錄ID ? ' <button class="btn sm" data-edit="' + esc(r.下班紀錄ID) +
-              '" data-label="' + esc(r.姓名 + ' 下班 ' + r.下班) + '">改</button>' : '') + '</td>' +
+              '" data-label="' + esc(fullName(r) + ' 下班 ' + r.下班) + '">改</button>' : '') + '</td>' +
           '<td class="num">' + (r.時數 || '') + '</td>' +
           '<td>' + statusTag(r.狀態) + '</td>' +
           '<td>' + verdictTag(r.判定) + suspicious + '</td>' +
           '<td><span class="tag mute">' + esc(r.來源 || '') + '</span></td>' +
           '<td class="actions"><button class="btn sm" data-punch="' + esc(r.員工編號) +
-            '" data-name="' + esc(r.姓名) + '">補登</button></td>' +
+            '" data-name="' + esc(fullName(r)) + '">補登</button></td>' +
           '</tr>';
       }).join('') + '</tbody>';
 
@@ -1254,7 +1272,7 @@ async function loadMonthly() {
       '<th class="num">請假時數</th><th>狀態</th></tr></thead><tbody>' +
       monthlyData.明細.map(function (r) {
         return '<tr>' +
-          '<td>' + esc(r.姓名) + '</td>' +
+          '<td>' + esc(fullName(r)) + '</td>' +
           '<td>' + esc(storeName(r.店代碼)) + '</td>' +
           '<td class="num">' + r.出勤天數 + '</td>' +
           '<td class="num">' + r.總時數 + '</td>' +
@@ -1279,7 +1297,7 @@ $('btn-export').addEventListener('click', function () {
   const headers = ['員工編號', '姓名', '店', '出勤天數', '總時數',
                    '遲到次數', '遲到分鐘', '早退次數', '早退分鐘', '缺卡天數', '請假時數'];
   const rows = monthlyData.明細.map(function (r) {
-    return [r.員工編號, r.姓名, storeName(r.店代碼), r.出勤天數, r.總時數,
+    return [r.員工編號, fullName(r), storeName(r.店代碼), r.出勤天數, r.總時數,
             r.遲到次數, r.遲到分鐘 || 0, r.早退次數, r.早退分鐘 || 0, r.缺卡天數, r.請假時數];
   });
 
@@ -1304,6 +1322,7 @@ async function loadEmployees() {
 
   try {
     employees = await api('listEmployees', { storeCode: $('emp-store').value || null });
+    rememberNames(employees);
 
     // 離職的人預設收起來。employees 仍保留完整名單，匯入班表、編輯時要用
     const showDisabled = $('emp-show-disabled').checked;
@@ -1328,22 +1347,22 @@ async function loadEmployees() {
         let actions = '';
 
         // 重發連結：店長可以重發自己店的員工，但主管的連結只有最高權限能重發
-        if (e.狀態 === '待註冊' && (isOwner() || e.角色 === '員工')) {
+        if (e.狀態 === '待註冊' && (isOwner() || e.角色 === '場館教練')) {
           actions += '<button class="btn sm" data-reissue="' + esc(e.員工編號) +
-                     '" data-name="' + esc(e.姓名) + '">重發連結</button>';
+                     '" data-name="' + esc(fullName(e)) + '">重發連結</button>';
         }
 
         if (e.狀態 !== '停用') {
           actions += '<button class="btn sm" data-balance="' + esc(e.員工編號) +
-                     '" data-name="' + esc(e.姓名) + '">假別餘額</button>';
+                     '" data-name="' + esc(fullName(e)) + '">假別餘額</button>';
         }
 
         // 編輯與帳密連結只限最高權限：改身分等於發權限
         if (isOwner()) {
           actions += '<button class="btn sm" data-edit="' + esc(e.員工編號) + '">編輯</button>';
-          if (e.角色 !== '員工' && e.已綁定LINE && e.狀態 !== '停用') {
+          if (e.角色 !== '場館教練' && e.已綁定LINE && e.狀態 !== '停用') {
             actions += '<button class="btn sm" data-cred="' + esc(e.員工編號) +
-                       '" data-name="' + esc(e.姓名) + '">' +
+                       '" data-name="' + esc(fullName(e)) + '">' +
                        (e.已設定後台帳號 ? '重設密碼' : '設定帳密') + '</button>';
           }
         }
@@ -1354,13 +1373,13 @@ async function loadEmployees() {
             actions += '<button class="btn sm" data-enable="' + esc(e.員工編號) + '">復職</button>';
           } else {
             actions += '<button class="btn sm danger" data-disable="' + esc(e.員工編號) +
-                       '" data-name="' + esc(e.姓名) + '">停用</button>';
+                       '" data-name="' + esc(fullName(e)) + '">停用</button>';
           }
         }
 
         return '<tr>' +
           '<td class="mono">' + esc(e.員工編號) + '</td>' +
-          '<td>' + esc(e.姓名) + '</td>' +
+          '<td>' + esc(fullName(e)) + '</td>' +
           '<td>' + esc(storeName(e.所屬店)) + '</td>' +
           '<td>' + esc(e.角色) + '</td>' +
           '<td class="mono">' + esc(e.到職日) + '</td>' +
@@ -1457,7 +1476,7 @@ function renderSchedule(range) {
       ? ' <span class="tag info" style="font-size:0.62rem" title="所屬店為' +
         esc(storeName(e.所屬店)) + '，來支援這間店">支援</span>'
       : '';
-    body += '<tr><td class="emp">' + esc(e.姓名) + pending + helping + '</td>';
+    body += '<tr><td class="emp">' + esc(fullName(e)) + pending + helping + '</td>';
 
     dates.forEach(function (d) {
       const wd = new Date(d + 'T12:00:00+08:00').getDay();
@@ -1470,7 +1489,7 @@ function renderSchedule(range) {
         : '未排班';
 
       body += '<td class="cell' + weekend +
-              '" data-emp="' + esc(empId) + '" data-name="' + esc(e.姓名) +
+              '" data-emp="' + esc(empId) + '" data-name="' + esc(fullName(e)) +
               '" data-date="' + d + '" title="' + esc(title) + '">' +
               '<span class="sh ' + shiftColorClass(cell) + '">' + esc(label) + '</span></td>';
     });
@@ -1809,6 +1828,7 @@ async function parseSelectedSheet() {
 
   try {
     if (!employees.length) employees = await api('listEmployees', {});
+    rememberNames(employees);
     if (!shiftTypes.length) shiftTypes = await api('listShiftTypes', {});
 
     const rows = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { header: 1, defval: '' });
@@ -2229,7 +2249,7 @@ async function loadPatterns() {
       }).join('') + '</tr></thead><tbody>' +
       data.員工.map(function (e) {
         const pattern = data.常態班[e.員工編號] || {};
-        let row = '<tr><td>' + esc(e.姓名) + '</td><td>' + esc(storeName(e.所屬店)) + '</td>';
+        let row = '<tr><td>' + esc(fullName(e)) + '</td><td>' + esc(storeName(e.所屬店)) + '</td>';
         for (let d = 1; d <= 7; d++) {
           const current = pattern[String(d)] ? pattern[String(d)].班別代碼 : '';
           row += '<td><select data-emp="' + esc(e.員工編號) + '" data-weekday="' + d + '">' +
@@ -2382,7 +2402,7 @@ async function loadPendingLeaves() {
 
         return '<tr>' +
           '<td class="mono">' + esc(shortDateTime(l.建立時間)) + '</td>' +
-          '<td>' + esc(l.姓名) + (l.臨時請假 ? ' <span class="tag warn">臨時</span>' : '') + '</td>' +
+          '<td>' + esc(fullName(l)) + (l.臨時請假 ? ' <span class="tag warn">臨時</span>' : '') + '</td>' +
           '<td>' + esc(storeName(l.所屬店)) + '</td>' +
           '<td>' + esc(l.假別) + '</td>' +
           '<td class="mono">' + esc(shortDateTime(l.開始時間)) + ' – ' +
@@ -2391,10 +2411,10 @@ async function loadPendingLeaves() {
           '<td class="num">' + remain + '</td>' +
           '<td>' + esc(l.事由 || '') + '</td>' +
           '<td class="actions">' +
-            '<button class="btn sm" data-approve="' + esc(l.單號) + '" data-name="' + esc(l.姓名) +
+            '<button class="btn sm" data-approve="' + esc(l.單號) + '" data-name="' + esc(fullName(l)) +
               '" data-info="' + esc(l.假別 + ' ' + l.時數 + ' 小時') + '">核准</button>' +
             '<button class="btn sm danger" data-reject="' + esc(l.單號) +
-              '" data-name="' + esc(l.姓名) + '">退回</button>' +
+              '" data-name="' + esc(fullName(l)) + '">退回</button>' +
           '</td></tr>';
       }).join('') + '</tbody>';
 
@@ -2432,7 +2452,7 @@ async function loadLeaveHistory() {
         const canCancel = l.狀態 === '待審核' || l.狀態 === '已核准';
 
         return '<tr>' +
-          '<td>' + esc(l.姓名) + '</td>' +
+          '<td>' + esc(fullName(l)) + '</td>' +
           '<td>' + esc(storeName(l.所屬店)) + '</td>' +
           '<td>' + esc(l.假別) + '</td>' +
           '<td class="mono">' + esc(shortDateTime(l.開始時間)) + ' – ' +
@@ -2443,7 +2463,7 @@ async function loadLeaveHistory() {
           '<td>' + esc(note) + '</td>' +
           '<td class="actions">' + (canCancel
             ? '<button class="btn sm danger" data-cancel="' + esc(l.單號) +
-              '" data-name="' + esc(l.姓名) + '" data-status="' + esc(l.狀態) + '">作廢</button>'
+              '" data-name="' + esc(fullName(l)) + '" data-status="' + esc(l.狀態) + '">作廢</button>'
             : '') + '</td></tr>';
       }).join('') + '</tbody>';
 
@@ -2517,8 +2537,7 @@ $('btn-add-leave').addEventListener('click', async function () {
   $('nl-employee').innerHTML = employees.filter(function (e) {
     return e.狀態 !== '停用';
   }).map(function (e) {
-    return '<option value="' + esc(e.員工編號) + '">' + esc(e.姓名) +
-      (e.中文姓名 ? '（' + esc(e.中文姓名) + '）' : '') + ' · ' + esc(storeName(e.所屬店)) +
+    return '<option value="' + esc(e.員工編號) + '">' + esc(fullName(e)) + ' · ' + esc(storeName(e.所屬店)) +
       '</option>';
   }).join('');
 
@@ -2559,7 +2578,7 @@ $('nl-submit').addEventListener('click', async function () {
 
     closeModal('modal-leave');
     invalidateViews();
-    toast(result.姓名 + ' 的假單已建立，' + result.時數 + ' 小時');
+    toast(fullName(result) + ' 的假單已建立，' + result.時數 + ' 小時');
     loadLeaves();
 
   } catch (err) {
@@ -2716,11 +2735,11 @@ $('btn-add-employee').addEventListener('click', function () {
   // 店長只能建「員工」。若讓他建店長，等於他可以自己造一把萬能鑰匙。
   // 後端也擋，這裡只是不要讓人白填一輪才被拒絕。
   $('ne-role').innerHTML = isOwner()
-    ? '<option value="員工">員工</option>' +
-      '<option value="店長">店長</option>' +
-      '<option value="儲備幹部">儲備幹部</option>' +
+    ? '<option value="場館教練">場館教練</option>' +
+      '<option value="店經理">店經理</option>' +
+      '<option value="儲備經理">儲備經理</option>' +
       '<option value="最高權限">最高權限</option>'
-    : '<option value="員工">員工</option>';
+    : '<option value="場館教練">場館教練</option>';
   $('ne-role').disabled = !isOwner();
   $('ne-store').disabled = !isOwner();
 
@@ -2746,7 +2765,7 @@ $('ne-submit').addEventListener('click', async function () {
     const url = LIFF_BASE + result.token;
     $('ne-result').innerHTML =
       '<div class="invite-result">' +
-      '<strong>' + esc(result.姓名) + '（' + esc(result.員工編號) + '）已建立</strong>' +
+      '<strong>' + esc(fullName(result)) + '（' + esc(result.員工編號) + '）已建立</strong>' +
       '<span style="font-size:0.82rem">把下面的連結傳給他，用手機 LINE 開啟即可完成註冊。' +
       '連結用過失效，' + esc(result.到期時間) + ' 前有效。</span>' +
       '<div class="url" id="invite-url">' + esc(url) + '</div>' +
@@ -2774,7 +2793,7 @@ function openEditEmployee(employeeId) {
   if (!e) return;
   editingEmployee = e;
 
-  $('ee-title').textContent = '編輯員工：' + e.姓名 + '（' + e.員工編號 + '）';
+  $('ee-title').textContent = '編輯員工：' + fullName(e) + '（' + e.員工編號 + '）';
   $('ee-id').value = e.員工編號 || '';
   $('ee-id-hint').textContent = e.員工編號 === session.employee.員工編號
     ? '這是你自己的編號，改了之後要重新登入後台'
@@ -2810,12 +2829,12 @@ function updateRoleHint() {
   let hint = '';
   if (e.員工編號 === session.employee.員工編號) {
     hint = '不能修改自己的身分，請由另一位最高權限處理';
-  } else if (role !== '員工' && e.角色 === '員工') {
+  } else if (role !== '場館教練' && e.角色 === '場館教練') {
     hint = e.已綁定LINE
       ? '儲存後會產生一條連結，傳給他用自己的 LINE 設定後台帳號密碼'
       : '他還沒註冊，註冊時就會要求設定後台帳號密碼';
-  } else if (role === '員工' && e.角色 !== '員工') {
-    hint = '改成員工後，他就不能登入後台了';
+  } else if (role === '場館教練' && e.角色 !== '場館教練') {
+    hint = '改成場館教練後，他就不能登入後台了';
   }
   $('ee-role-hint').textContent = hint;
 }
@@ -2849,7 +2868,7 @@ $('ee-submit').addEventListener('click', async function () {
     loadEmployees();
 
     if (result.帳密連結) {
-      showInviteLink(result.姓名, result.帳密連結.token, result.帳密連結.到期時間, 'credential');
+      showInviteLink(fullName(result), result.帳密連結.token, result.帳密連結.到期時間, 'credential');
     } else {
       toast('已儲存');
     }
@@ -2908,6 +2927,7 @@ $('emp-table').addEventListener('click', async function (e) {
 async function openPunchModal(employeeId, name) {
   if (!employees.length) {
     employees = await api('listEmployees', {});
+    rememberNames(employees);
   }
 
   $('np-employee').innerHTML = employees
@@ -2915,7 +2935,7 @@ async function openPunchModal(employeeId, name) {
     .map(function (e) {
       return '<option value="' + esc(e.員工編號) + '"' +
              (e.員工編號 === employeeId ? ' selected' : '') + '>' +
-             esc(e.姓名) + '（' + esc(storeName(e.所屬店)) + '）</option>';
+             esc(fullName(e)) + '（' + esc(storeName(e.所屬店)) + '）</option>';
     }).join('');
 
   $('np-date').value = $('daily-date').value || todayStr();
