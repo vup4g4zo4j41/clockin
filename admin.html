@@ -557,6 +557,7 @@
       <select id="ne-role">
         <option value="員工">員工</option>
         <option value="店長">店長</option>
+        <option value="儲備幹部">儲備幹部</option>
         <option value="最高權限">最高權限</option>
       </select>
     </div>
@@ -601,6 +602,7 @@
       <select id="ee-role">
         <option value="員工">員工</option>
         <option value="店長">店長</option>
+        <option value="儲備幹部">儲備幹部</option>
         <option value="最高權限">最高權限</option>
       </select>
       <span class="hint" id="ee-role-hint"></span>
@@ -2709,6 +2711,7 @@ $('btn-add-employee').addEventListener('click', function () {
   $('ne-role').innerHTML = isOwner()
     ? '<option value="員工">員工</option>' +
       '<option value="店長">店長</option>' +
+      '<option value="儲備幹部">儲備幹部</option>' +
       '<option value="最高權限">最高權限</option>'
     : '<option value="員工">員工</option>';
   $('ne-role').disabled = !isOwner();
