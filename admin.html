@@ -1266,10 +1266,15 @@ async function loadMonthly() {
              (m > 0 ? ' <span class="sub">' + text + '</span>' : '');
     };
 
+    // 產假依年資由薪資系統判斷，有人請才多一欄
+    const hasTenure = monthlyData.明細.some(function (r) { return r.依年資假 > 0; });
+
     table.innerHTML =
       '<thead><tr><th>姓名</th><th>店</th><th class="num">出勤天數</th><th class="num">總時數</th>' +
-      '<th class="num">遲到</th><th class="num">早退</th><th class="num">缺卡</th>' +
+      '<th class="num">遲到</th><th class="num">早退</th><th class="num" title="當天只打了上班卡或只打了下班卡">未打卡</th>' +
+      '<th class="num" title="有排班、沒請假、整天沒打卡。記事假或曠職由總經理決定">待確認缺勤</th>' +
       '<th class="num">全薪假</th><th class="num">半薪假</th><th class="num">無薪假</th>' +
+      (hasTenure ? '<th class="num" title="到職未滿 6 個月半薪，由薪資系統判斷">產假</th>' : '') +
       '<th>狀態</th></tr></thead><tbody>' +
       monthlyData.明細.map(function (r) {
         return '<tr>' +
@@ -1282,7 +1287,11 @@ async function loadMonthly() {
           '<td class="num">' + countWithMinutes(r.遲到次數, r.遲到分鐘) + '</td>' +
           '<td class="num">' + countWithMinutes(r.早退次數, r.早退分鐘) + '</td>' +
           '<td class="num">' + (r.缺卡天數 ? '<span class="tag crit">' + r.缺卡天數 + '</span>' : '0') + '</td>' +
+          '<td class="num">' + (r.待確認缺勤天數
+            ? '<span class="tag crit">' + r.待確認缺勤天數 + ' 天</span> <span class="sub">' + r.待確認缺勤時數 + ' 小時</span>'
+            : '0') + '</td>' +
           leavePayCell(r, 'full') + leavePayCell(r, 'half') + leavePayCell(r, 'none') +
+          (hasTenure ? '<td class="num">' + (r.依年資假 || 0) + '</td>' : '') +
           '<td>' + (r.狀態 === '在職' ? '' : '<span class="tag mute">' + esc(r.狀態) + '</span>') + '</td>' +
           '</tr>';
       }).join('') + '</tbody>';
@@ -1303,6 +1312,7 @@ function leavePayCell(r, kind) {
   const detail = Object.keys(r.請假明細 || {}).filter(function (name) {
     const ratios = monthlyData.給薪比例 || {};
     const rr = ratios[name] === undefined ? 1 : ratios[name];
+    if (rr === null) return false;   // 產假依年資，另一欄
     return kind === 'full' ? rr >= 1 : kind === 'none' ? rr <= 0 : (rr > 0 && rr < 1);
   }).map(function (name) { return esc(name) + ' ' + r.請假明細[name]; }).join('・');
 
@@ -1318,14 +1328,17 @@ $('btn-export').addEventListener('click', function () {
   // 每個假別一欄，再加全薪／半薪／無薪小計，會計可以直接拿去算薪資
   const types = monthlyData.假別 || [];
   const headers = ['員工編號', '姓名', '店', '出勤天數', '總時數',
-                   '遲到次數', '遲到分鐘', '早退次數', '早退分鐘', '缺卡天數']
+                   '遲到次數', '遲到分鐘', '早退次數', '早退分鐘', '未打卡天數']
     .concat(types.map(function (t) { return t + '（時）'; }))
-    .concat(['全薪假（時）', '半薪假（時）', '無薪假（時）', '請假合計（時）', '待審假單']);
+    .concat(['全薪假（時）', '半薪假（時）', '無薪假（時）', '產假依年資（時）', '請假合計（時）', '待審假單',
+             '待確認缺勤（天）', '待確認缺勤（時）', '臨時請假次數（不含病假）', '臨時病假次數', '遲到超過30分次數']);
   const rows = monthlyData.明細.map(function (r) {
     return [r.員工編號, fullName(r), storeName(r.店代碼), r.出勤天數, r.總時數,
             r.遲到次數, r.遲到分鐘 || 0, r.早退次數, r.早退分鐘 || 0, r.缺卡天數]
       .concat(types.map(function (t) { return (r.請假明細 || {})[t] || 0; }))
-      .concat([r.全薪假, r.半薪假, r.無薪假, r.請假時數, r.待審假單 || 0]);
+      .concat([r.全薪假, r.半薪假, r.無薪假, r.依年資假 || 0, r.請假時數, r.待審假單 || 0,
+               r.待確認缺勤天數 || 0, r.待確認缺勤時數 || 0, r.臨時請假次數 || 0, r.臨時病假次數 || 0,
+               r.遲到超過30分次數 || 0]);
   });
 
   const csv = [headers].concat(rows).map(function (row) {

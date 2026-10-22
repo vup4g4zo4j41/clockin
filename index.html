@@ -920,7 +920,7 @@ async function loadRecords() {
     log.innerHTML = data.明細.map(function (d) {
       const day = d.日期.slice(5).replace('-', '/');
       const times = d.缺卡
-        ? '<span style="color:var(--crit)">' + (d.上班 || '—') + ' – ' + (d.下班 || '缺卡') + '</span>'
+        ? '<span style="color:var(--crit)">' + (d.上班 || '—') + ' – ' + (d.下班 || '未打卡') + '</span>'
         : d.上班 + ' – ' + d.下班;
       return '<div class="log-row">' +
         '<span class="d">' + day + '</span>' +
