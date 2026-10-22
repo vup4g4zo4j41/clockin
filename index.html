@@ -95,6 +95,9 @@
   }
   .leave-alert .txt { flex: 1; }
 
+  .notify-card .notify-desc { font-size: 0.9rem; color: var(--ink-2); }
+  .notify-card .notify-code { font-size: 0.88rem; color: var(--ink-2); }
+
   /* ── 定位狀態 ── */
   .locate {
     display: flex; align-items: center; gap: 0.6rem;
@@ -360,6 +363,13 @@
       <span>→</span>
     </a>
 
+    <div class="card notify-card" id="notify-card" style="display:none">
+      <div class="card-label">請假通知</div>
+      <div class="notify-desc">店裡有人送假單時，CITYGO 官方帳號會傳 LINE 通知你</div>
+      <button class="btn" id="notify-btn">🔔 開啟請假通知</button>
+      <div class="notify-code" id="notify-code" style="display:none"></div>
+    </div>
+
     <div class="card" id="shift-card">
       <div class="card-label">今日班表</div>
       <div class="shift-time" id="shift-time">—</div>
@@ -566,6 +576,7 @@
 const CONFIG = {
   LIFF_ID: '2011083590-EXsGOSUJ',
   ADMIN_URL: 'https://vup4g4zo4j41.github.io/clockin/admin.html',
+  OA_ID: '@579ltvmm',   // 官方帳號「CITYGO打卡系統」，店長傳綁定碼給它開啟請假通知
   API_URL: 'https://btjrsiusaqoldwvkebfv.supabase.co/functions/v1/api?forceFunctionRegion=ap-southeast-1',
 };
 
@@ -812,6 +823,8 @@ function renderContext(ctx) {
   } else {
     leaveAlert.style.display = 'none';
   }
+
+  document.getElementById('notify-card').style.display = ctx.需綁定通知 ? '' : 'none';
 
   document.getElementById('setup-entry').style.display = ctx.可設定場館 ? '' : 'none';
 
@@ -1459,6 +1472,30 @@ document.getElementById('error-retry').addEventListener('click', function () {
   location.reload();
 });
 document.getElementById('setup-entry').addEventListener('click', loadSetupScreen);
+
+// 開啟請假通知：拿綁定碼 → 跳到官方帳號聊天室、訊息已填好，店長按送出就完成
+document.getElementById('notify-btn').addEventListener('click', async function () {
+  const btn = this;
+  const codeBox = document.getElementById('notify-code');
+  btn.disabled = true;
+  btn.textContent = '產生綁定碼…';
+  try {
+    const r = await api('createNotifyBindCode', { idToken: idToken });
+    const text = '綁定 ' + r.綁定碼;
+    codeBox.textContent = '請在 CITYGO 聊天室按送出「' + text + '」（' + r.有效分鐘 +
+      ' 分鐘內有效）。若沒有自動帶入，手動傳這段文字也可以。';
+    codeBox.style.display = '';
+    btn.textContent = '🔔 重新產生綁定碼';
+    location.href = 'https://line.me/R/oaMessage/' + encodeURIComponent(CONFIG.OA_ID) +
+      '/?' + encodeURIComponent(text);
+  } catch (err) {
+    codeBox.textContent = err.message;
+    codeBox.style.display = '';
+    btn.textContent = '🔔 開啟請假通知';
+  } finally {
+    btn.disabled = false;
+  }
+});
 document.getElementById('setup-back').addEventListener('click', function () {
   loadPunchScreen().catch(function (err) { showError('無法載入', err.message); });
 });
