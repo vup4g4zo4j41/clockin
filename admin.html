@@ -845,6 +845,11 @@
     <div class="field">
       <label for="np-time">時間</label>
       <input type="time" id="np-time">
+      <label id="np-nextday-row" style="display:none;align-items:center;gap:0.5rem;font-weight:500;margin-top:0.4rem">
+        <input type="checkbox" id="np-nextday" style="width:auto">
+        隔天凌晨（晚班過了午夜才下班）
+      </label>
+      <span class="hint" id="np-nextday-hint" style="display:none">日期選上班那天，例如 10/22 晚班 00:15 下班：日期選 10/22、時間 00:15、勾這格</span>
     </div>
     <div class="field">
       <label for="np-reason">原因</label>
@@ -867,6 +872,10 @@
     <div class="field">
       <label for="ed-time">新的時間</label>
       <input type="time" id="ed-time">
+      <label id="ed-nextday-row" style="display:none;align-items:center;gap:0.5rem;font-weight:500;margin-top:0.4rem">
+        <input type="checkbox" id="ed-nextday" style="width:auto">
+        隔天凌晨（晚班過了午夜才下班）
+      </label>
     </div>
     <div class="field">
       <label for="ed-reason">原因</label>
@@ -1202,9 +1211,10 @@ async function loadDaily() {
           '<td class="mono">' + esc(r.上班) +
             (r.上班紀錄ID ? ' <button class="btn sm" data-edit="' + esc(r.上班紀錄ID) +
               '" data-label="' + esc(fullName(r) + ' 上班 ' + r.上班) + '">改</button>' : '') + '</td>' +
-          '<td class="mono">' + esc(r.下班) +
+          '<td class="mono">' + esc(r.下班) + (r.下班跨日 ? ' <span class="sub">隔天</span>' : '') +
             (r.下班紀錄ID ? ' <button class="btn sm" data-edit="' + esc(r.下班紀錄ID) +
-              '" data-label="' + esc(fullName(r) + ' 下班 ' + r.下班) + '">改</button>' : '') + '</td>' +
+              '" data-type="下班" data-nextday="' + (r.下班跨日 ? '1' : '') +
+              '" data-label="' + esc(fullName(r) + ' 下班 ' + r.下班 + (r.下班跨日 ? '（隔天凌晨）' : '')) + '">改</button>' : '') + '</td>' +
           '<td class="num">' + (r.時數 || '') + '</td>' +
           '<td>' + statusTag(r.狀態) + '</td>' +
           '<td>' + verdictTag(r.判定) + suspicious + '</td>' +
@@ -3004,12 +3014,28 @@ async function openPunchModal(employeeId, name) {
 
   $('np-date').value = $('daily-date').value || todayStr();
   $('np-time').value = '';
+  $('np-nextday').checked = false;
+  syncNextDay();
   $('np-reason').value = '';
   showMsg('np-msg', '');
   openModal('modal-punch');
 }
 
 $('btn-add-punch').addEventListener('click', function () { openPunchModal(); });
+
+// 下班卡才能選「隔天凌晨」；時間填 06:00 前會自動幫忙勾起來（多半是晚班過午夜）
+function syncNextDay() {
+  const isOut = $('np-type').value === '下班';
+  $('np-nextday-row').style.display = isOut ? 'flex' : 'none';
+  $('np-nextday-hint').style.display = isOut ? '' : 'none';
+}
+$('np-type').addEventListener('change', syncNextDay);
+$('np-time').addEventListener('change', function () {
+  if ($('np-type').value === '下班') $('np-nextday').checked = !!this.value && this.value < '06:00';
+});
+$('ed-time').addEventListener('change', function () {
+  if ($('ed-nextday-row').style.display !== 'none') $('ed-nextday').checked = !!this.value && this.value < '06:00';
+});
 
 $('daily-table').addEventListener('click', function (e) {
   const btn = e.target.closest('button');
@@ -3021,6 +3047,8 @@ $('daily-table').addEventListener('click', function (e) {
   if (btn.dataset.edit) {
     $('edit-info').textContent = btn.dataset.label;
     $('ed-time').value = '';
+    $('ed-nextday-row').style.display = btn.dataset.type === '下班' ? 'flex' : 'none';
+    $('ed-nextday').checked = btn.dataset.nextday === '1';
     $('ed-reason').value = '';
     showMsg('ed-msg', '');
     $('modal-edit').dataset.recordId = btn.dataset.edit;
@@ -3041,6 +3069,7 @@ $('np-submit').addEventListener('click', async function () {
         time: $('np-time').value,
         type: $('np-type').value,
         reason: $('np-reason').value.trim(),
+        nextDay: $('np-type').value === '下班' && $('np-nextday').checked,
       },
     });
 
@@ -3067,6 +3096,7 @@ $('ed-submit').addEventListener('click', async function () {
       recordId: $('modal-edit').dataset.recordId,
       time: $('ed-time').value,
       reason: $('ed-reason').value.trim(),
+      nextDay: $('ed-nextday-row').style.display !== 'none' && $('ed-nextday').checked,
     });
     closeModal('modal-edit');
     invalidateViews();
