@@ -1367,22 +1367,9 @@ $('monthly-reload').addEventListener('click', loadMonthly);
 $('btn-export').addEventListener('click', function () {
   if (!monthlyData || !monthlyData.明細.length) { toast('沒有資料可以匯出'); return; }
 
-  // 每個假別一欄，再加全薪／半薪／無薪小計，會計可以直接拿去算薪資
-  const types = monthlyData.假別 || [];
-  const headers = ['員工編號', '姓名', '店', '出勤天數', '總時數',
-                   '遲到次數', '遲到分鐘', '早退次數', '早退分鐘', '未打卡天數']
-    .concat(types.map(function (t) { return t + '（時）'; }))
-    .concat(['產假依年資（時）', '請假合計（時）', '待審假單',
-             '待確認缺勤（天）', '待確認缺勤（時）', '臨時請假次數（不含病假）', '臨時病假次數', '遲到超過30分次數',
-             '特休折現（時）', '特休折現說明']);
-  const rows = monthlyData.明細.map(function (r) {
-    return [r.員工編號, fullName(r), storeName(r.店代碼), r.出勤天數, r.總時數,
-            r.遲到次數, r.遲到分鐘 || 0, r.早退次數, r.早退分鐘 || 0, r.缺卡天數]
-      .concat(types.map(function (t) { return (r.請假明細 || {})[t] || 0; }))
-      .concat([r.依年資假 || 0, r.請假時數, r.待審假單 || 0,
-               r.待確認缺勤天數 || 0, r.待確認缺勤時數 || 0, r.臨時請假次數 || 0, r.臨時病假次數 || 0,
-               r.遲到超過30分次數 || 0, r.特休折現時數 || 0, r.特休折現說明 || '']);
-  });
+  // 欄位與數值由後端組好（monthlyExport_），跟薪資系統直接讀取的是同一份，不在這裡另外算
+  const headers = monthlyData.匯出.欄位;
+  const rows = monthlyData.匯出.列;
 
   const csv = [headers].concat(rows).map(function (row) {
     return row.map(function (c) { return '"' + String(c).replace(/"/g, '""') + '"'; }).join(',');
