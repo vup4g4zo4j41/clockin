@@ -369,6 +369,7 @@
       <button data-view="leaves">假單<span class="badge hidden" id="leave-badge"></span></button>
       <button data-view="employees">員工</button>
       <button data-view="venues">場館</button>
+      <button data-view="lottery">咖啡抽獎</button>
       <button data-view="audit" id="nav-audit">異動紀錄</button>
     </nav>
   </header>
@@ -519,6 +520,30 @@
           <span class="count" id="venue-note">座標請用手機在店裡設定</span>
         </div>
         <div class="scroll"><table id="venue-table"></table></div>
+      </div>
+    </section>
+
+    <!-- 咖啡抽獎 -->
+    <section class="view" id="view-lottery">
+      <div class="msg" id="lottery-rule" style="background:var(--surface);border:1px solid var(--rule);font-size:0.85rem;color:var(--ink-2);line-height:1.6"></div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <h2>中獎名單</h2>
+          <span class="count">咖啡券交給中獎的人之後，按「已兌換」</span>
+          <button class="btn sm" id="lottery-reload">重新整理</button>
+        </div>
+        <div class="scroll"><table id="lottery-draws"></table></div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <h2>籤數排行</h2>
+          <input type="month" id="lottery-month">
+          <button class="btn" id="lottery-query">查詢</button>
+          <span class="count" id="lottery-count"></span>
+        </div>
+        <div class="scroll"><table id="lottery-table"></table></div>
       </div>
     </section>
 
@@ -1082,6 +1107,7 @@ async function enterApp() {
   $('monthly-month').value = monthStr();
   $('sched-month').value = monthStr();
   $('leave-month').value = monthStr();
+  $('lottery-month').value = monthStr();
 
   // 從打卡頁的「待審假單」提醒點進來，直接開假單分頁
   if (location.hash === '#leaves') {
@@ -1165,7 +1191,7 @@ $('nav').addEventListener('click', function (e) {
   const loaders = {
     daily: loadDaily, monthly: loadMonthly, schedule: loadSchedule,
     shifts: loadShifts, employees: loadEmployees, venues: loadVenues, audit: loadAudit,
-    leaves: loadLeaves,
+    leaves: loadLeaves, lottery: loadLottery,
   };
 
   if (!loaders[view]) return;
@@ -2658,6 +2684,100 @@ $('nl-submit').addEventListener('click', async function () {
   } finally {
     btn.disabled = false; btn.textContent = '建立';
   }
+});
+
+// ── 咖啡抽獎 ──────────────────────────────────────────
+//
+// 籤數、資格、抽獎都在後端算。每月抽獎日起第一個打開系統的人會觸發自動抽，
+// 這裡只負責看結果、標記兌換。
+async function loadLottery() {
+  const draws = $('lottery-draws');
+  const table = $('lottery-table');
+  draws.innerHTML = table.innerHTML = '<tbody><tr><td class="empty">載入中…</td></tr></tbody>';
+
+  try {
+    const d = await api('getLottery', { month: $('lottery-month').value });
+
+    $('lottery-rule').innerHTML =
+      '<strong>規則</strong>：場館教練每次自己用 LINE <strong>準時</strong>上班打卡 = 1 張籤（一天最多 1 張，主管補登的不算）。' +
+      '當月有<strong>遲到、事假、待確認缺勤</strong>的人沒有資格；上個月中獎的人這個月不抽。<br>' +
+      '每月 ' + d.抽獎日 + ' 號系統自動抽出上個月全公司 ' + d.抽獎人數 + ' 位，籤越多機會越大。' +
+      '咖啡券在抽出當月月底前向店經理兌換。' + Number(d.起始月.slice(5)) + ' 月開始累積。';
+
+    if (!d.中獎紀錄.length) {
+      draws.innerHTML = '<tbody><tr><td class="empty">還沒有抽過獎。第一次是 ' +
+        nextDrawLabel(d.起始月, d.抽獎日) + '</td></tr></tbody>';
+    } else {
+      draws.innerHTML =
+        '<thead><tr><th>月份</th><th>中獎</th><th>店</th><th class="num">籤數</th>' +
+        '<th>兌換期限</th><th>狀態</th><th></th></tr></thead><tbody>' +
+        d.中獎紀錄.map(function (r) {
+          if (!r.名次) {
+            return '<tr><td class="mono">' + esc(r.月份) + '</td>' +
+              '<td colspan="6" class="sub">沒有人符合資格，這個月沒有抽出（' + esc(String(r.抽出時間).slice(0, 16)) + '）</td></tr>';
+          }
+          const status = r.兌換狀態 === '已兌換'
+            ? '<span class="tag ok">已兌換</span> <span class="sub">' + esc(String(r.兌換時間).slice(5, 16)) + ' ' + esc(fullName({ 姓名: r.兌換經手人 })) + '</span>'
+            : r.兌換狀態 === '已過期' ? '<span class="tag mute">已過期</span>' : '<span class="tag warn">未兌換</span>';
+          return '<tr>' +
+            '<td class="mono">' + esc(r.月份) + '</td>' +
+            '<td>' + esc(fullName(r)) + '</td>' +
+            '<td>' + esc(storeName(r.所屬店)) + '</td>' +
+            '<td class="num" title="全部 ' + r.參加人數 + ' 人、' + r.總籤數 + ' 張籤">' + r.籤數 + ' / ' + r.總籤數 + '</td>' +
+            '<td class="mono">' + esc(r.兌換期限) + '</td>' +
+            '<td>' + status + '</td>' +
+            '<td>' + (r.可兌換
+              ? '<button class="btn sm" data-month="' + esc(r.月份) + '" data-rank="' + r.名次 + '" data-name="' + esc(fullName(r)) + '">已兌換</button>'
+              : '') + '</td>' +
+            '</tr>';
+        }).join('') + '</tbody>';
+    }
+
+    $('lottery-count').textContent = d.月份 < d.起始月 ? d.起始月 + ' 起才開始累積' : d.名單.length + ' 人';
+    if (!d.名單.length) {
+      table.innerHTML = '<tbody><tr><td class="empty">沒有場館教練</td></tr></tbody>';
+      return;
+    }
+    table.innerHTML =
+      '<thead><tr><th>姓名</th><th>店</th><th class="num">籤數</th><th>資格</th></tr></thead><tbody>' +
+      d.名單.map(function (r) {
+        const ok = !r.取消原因 && !r.上月中獎;
+        return '<tr>' +
+          '<td>' + esc(fullName(r)) + '</td>' +
+          '<td>' + esc(storeName(r.所屬店)) + '</td>' +
+          '<td class="num">' + r.籤數 + '</td>' +
+          '<td>' + (r.取消原因 ? '<span class="tag crit">' + esc(r.取消原因) + '</span>'
+            : r.上月中獎 ? '<span class="tag mute">上月已中獎</span>'
+            : '<span class="tag ok">符合</span>') + '</td>' +
+          '</tr>';
+      }).join('') + '</tbody>';
+  } catch (err) {
+    draws.innerHTML = '<tbody><tr><td class="empty">' + esc(err.message) + '</td></tr></tbody>';
+    table.innerHTML = '';
+  }
+}
+
+/** 起始月的下個月抽獎日，例如 2026-11 → 「2026-12-03」。 */
+function nextDrawLabel(startMonth, day) {
+  let y = Number(startMonth.slice(0, 4)), m = Number(startMonth.slice(5, 7)) + 1;
+  if (m > 12) { m = 1; y++; }
+  return y + '-' + String(m).padStart(2, '0') + '-' + String(day).padStart(2, '0');
+}
+
+$('lottery-reload').addEventListener('click', loadLottery);
+$('lottery-query').addEventListener('click', loadLottery);
+
+$('lottery-draws').addEventListener('click', async function (e) {
+  const btn = e.target.closest('button[data-rank]');
+  if (!btn) return;
+  if (!confirm('確認已把 ' + btn.dataset.month + ' 的咖啡券交給「' + btn.dataset.name + '」？')) return;
+
+  btn.disabled = true;
+  try {
+    await api('redeemLottery', { month: btn.dataset.month, rank: Number(btn.dataset.rank) });
+    toast('已標記兌換');
+    loadLottery();
+  } catch (err) { alert(err.message); btn.disabled = false; }
 });
 
 // ── 異動紀錄 ──────────────────────────────────────────

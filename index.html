@@ -158,6 +158,27 @@
   .leave-alert .txt { flex: 1; }
 
   .notify-card .notify-desc { font-size: 0.9rem; color: var(--ink-2); }
+
+  /* ── 每月咖啡抽獎：只有中獎的人看得到（活動不公開，要像意外的驚喜） ── */
+  .coffee-alert {
+    display: flex; align-items: center; gap: 0.6rem;
+    padding: 0.85rem 1rem; border-radius: 10px;
+    font-size: 0.92rem; font-weight: 600; line-height: 1.45;
+    background: #FDEDE6; color: #A8381A;
+  }
+  .coffee-win-card {
+    width: 100%; max-width: 320px; text-align: center;
+    background: #FFFCF9; color: #2B2522;
+    border: 2px solid #EA5326; outline: 6px solid #FFFCF9; outline-offset: -10px;
+    border-radius: 6px; padding: 1.6rem 1.4rem 1.3rem;
+    box-shadow: 0 16px 40px rgba(0,0,0,0.3);
+    animation: omi-pop 0.45s cubic-bezier(.2,1.4,.4,1);
+  }
+  .cw-cup { font-size: 3rem; line-height: 1; }
+  .cw-head { margin-top: 0.5rem; font-size: 0.85rem; letter-spacing: 0.35em; color: #C4431B; font-weight: 700; }
+  .cw-title { margin-top: 0.5rem; font-size: 1.25rem; font-weight: 800; line-height: 1.4; }
+  .cw-text { margin-top: 0.5rem; font-size: 0.98rem; line-height: 1.6; color: #5C504A; white-space: pre-line; }
+  @media (prefers-reduced-motion: reduce) { .coffee-win-card { animation: none; } }
   .notify-card .notify-code { font-size: 0.88rem; color: var(--ink-2); }
 
   /* ── 定位狀態 ── */
@@ -432,6 +453,10 @@
       <span>→</span>
     </a>
 
+    <div class="coffee-alert" id="coffee-alert" style="display:none">
+      <span>🎉</span><span id="coffee-alert-text"></span>
+    </div>
+
     <div class="card notify-card" id="notify-card" style="display:none">
       <div class="card-label">請假通知</div>
       <div class="notify-desc">店裡有人送假單時，CITYGO 官方帳號會傳 LINE 通知你</div>
@@ -649,6 +674,17 @@
     <div class="omi-text" id="omi-text"></div>
     <div class="omi-wish" id="omi-wish"></div>
     <button class="omi-btn" id="omi-close">收下好運</button>
+  </div>
+</div>
+
+<!-- 咖啡券中獎：每台手機只跳一次，之後打卡頁上方會一直有提醒到兌換為止 -->
+<div class="omikuji" id="coffee-win" role="dialog" aria-label="咖啡券中獎">
+  <div class="coffee-win-card">
+    <div class="cw-cup">☕</div>
+    <div class="cw-head">恭 喜 中 獎</div>
+    <div class="cw-title" id="cw-title"></div>
+    <div class="cw-text" id="cw-text"></div>
+    <button class="omi-btn" id="cw-close">太好了！</button>
   </div>
 </div>
 
@@ -912,6 +948,8 @@ function renderContext(ctx) {
 
   document.getElementById('notify-card').style.display = ctx.需綁定通知 ? '' : 'none';
 
+  renderCoffee(ctx.咖啡券);
+
   document.getElementById('setup-entry').style.display = ctx.可設定場館 ? '' : 'none';
 
   if (!punchPoints.length) {
@@ -975,8 +1013,54 @@ async function loadPunchScreen() {
   const ok = renderContext(ctx);
   document.getElementById('tabs').style.display = '';
   show('punch');
+  maybeShowCoffeeWin(ctx);
   if (ok) locate();
 }
+
+
+// ─────────────────────────────────────────────
+// 每月咖啡抽獎
+//
+// 活動不對員工公開，打卡頁只有中獎的人會看到——要像意外的驚喜。
+// 籤數、資格、抽獎都在後端算，這裡只負責顯示。
+// ─────────────────────────────────────────────
+function monthNum(ym) {
+  return Number(String(ym).slice(5, 7));
+}
+
+function mdLabel(date) {
+  return Number(date.slice(5, 7)) + '/' + Number(date.slice(8, 10));
+}
+
+function renderCoffee(win) {
+  const alertEl = document.getElementById('coffee-alert');
+  if (win) {
+    document.getElementById('coffee-alert-text').textContent =
+      '你抽中 ' + monthNum(win.月份) + ' 月咖啡券！請在 ' + mdLabel(win.兌換期限) + ' 前向店經理兌換';
+    alertEl.style.display = '';
+  } else {
+    alertEl.style.display = 'none';
+  }
+}
+
+function maybeShowCoffeeWin(ctx) {
+  const win = ctx && ctx.咖啡券;
+  if (!win) return;
+
+  const key = 'coffee_win_seen_' + win.月份;
+  try { if (localStorage.getItem(key)) return; } catch (e) { /* 讀不到就照樣跳 */ }
+
+  const name = String(ctx.姓名 || '').trim();
+  document.getElementById('cw-title').textContent = name + '，你抽中 ' + monthNum(win.月份) + ' 月咖啡券！';
+  document.getElementById('cw-text').textContent =
+    '謝謝你 ' + monthNum(win.月份) + ' 月每天準時上班，主管請你喝咖啡 ☕\n請在 ' + mdLabel(win.兌換期限) + ' 前向店經理兌換';
+  document.getElementById('coffee-win').classList.add('open');
+  try { localStorage.setItem(key, '1'); } catch (e) { /* 存不了就下次再跳 */ }
+}
+
+document.getElementById('cw-close').addEventListener('click', function () {
+  document.getElementById('coffee-win').classList.remove('open');
+});
 
 
 // ─────────────────────────────────────────────
