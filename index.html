@@ -700,6 +700,34 @@ const CONFIG = {
 };
 
 // ─────────────────────────────────────────────
+// 版本檢查：LINE 內建瀏覽器常拿手機裡存的舊網頁出來用。
+// 打開時先問 version.json 最新版是哪一版，比自己舊就換新網址重新載入
+// （網址多一個 v=版本，手機就不會再拿舊的）。每次上線要同時改這裡和 version.json。
+// ─────────────────────────────────────────────
+const PAGE_VERSION = '20261024a';
+
+async function ensureLatestPage() {
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(function () { ctrl.abort(); }, 3000);
+    const res = await fetch('version.json?t=' + Date.now(), { cache: 'no-store', signal: ctrl.signal });
+    clearTimeout(timer);
+    const latest = String((await res.json()).version || '');
+    const url = new URL(location.href);
+    // 已經帶著最新版號還是舊頁面，就不再重整，避免無限重新載入
+    if (!latest || latest === PAGE_VERSION || url.searchParams.get('v') === latest) return false;
+    // LINE 登入回來的一次性參數不能帶著重整，否則重新登入會失敗
+    ['code', 'state', 'liffClientId', 'liffRedirectUri'].forEach(function (k) { url.searchParams.delete(k); });
+    url.searchParams.set('v', latest);
+    location.replace(url.toString());
+    return true;
+  } catch (e) {
+    return false;   // 查不到就照常使用，不能因為這個擋住打卡
+  }
+}
+
+
+// ─────────────────────────────────────────────
 // 與後端溝通
 //
 // Content-Type 用 text/plain 是刻意的：Apps Script 不回應 CORS 預檢請求，
@@ -1731,6 +1759,9 @@ async function main() {
       liff.login();
       return;
     }
+
+    setText('檢查版本…');
+    if (await ensureLatestPage()) return;
 
     idToken = liff.getIDToken();
     if (!idToken) {
